@@ -1,0 +1,13 @@
+{
+  "_note": "TEST-ONLY values for the OAuth shim compatibility contract. Not secrets.",
+  "publicUrl": "https://mail.example.com",
+  "tokenSecretHex": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+  "loginUser": "you",
+  "loginPassword": "correct horse battery staple",
+  "loginPasswordHash": "scrypt:32768:8:1:Zml4dHVyZS1zYWx0LTE2Yg:P7g79ocKB9ftU_aZhDvrdsrVhZwtLmVo3SAhEM5Icgk",
+  "clientId": "6f1c1d0e-7a51-4d3e-9a43-2b0b6c0f5e11",
+  "refreshToken": "test-refresh-token-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "accessTokenValid": "eyJ0eXAiOiJhdCIsImNpZCI6IjZmMWMxZDBlLTdhNTEtNGQzZS05YTQzLTJiMGI2YzBmNWUxMSIsInNjcCI6W10sImF1ZCI6Imh0dHBzOi8vbWFpbC5leGFtcGxlLmNvbS9tY3AiLCJleHAiOjQxMDI0NDQ4MDB9.BzlCPhpwjY3JIgEnMrm9QNzOICHoAoIKypkhMS30gGM",
+  "accessTokenExpired": "eyJ0eXAiOiJhdCIsImNpZCI6IjZmMWMxZDBlLTdhNTEtNGQzZS05YTQzLTJiMGI2YzBmNWUxMSIsInNjcCI6W10sImF1ZCI6Imh0dHBzOi8vbWFpbC5leGFtcGxlLmNvbS9tY3AiLCJleHAiOjE3MDAwMDAwMDB9.4ppi43e-G8f016cU2UDZJex_TskOhhXeXWHHgkoriLg",
+  "accessTokenUnknownClient": "eyJ0eXAiOiJhdCIsImNpZCI6IjAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDAwMCIsInNjcCI6W10sImF1ZCI6bnVsbCwiZXhwIjo0MTAyNDQ0ODAwfQ.EkddBenVOKvU0fu51BHrH-tHDItlqYBKtZ30219B91M"
+}

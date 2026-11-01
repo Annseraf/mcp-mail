@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "accounts": [
+    {
+      "id": "main",
+      "label": "Main",
+      "default": true,
+      "imap": {
+        "host": "imap.mailbox.org",
+        "port": 993,
+        "user": "you@example.com",
+        "pass": "secret",
+        "tls": true
+      },
+      "smtp": {
+        "host": "smtp.mailbox.org",
+        "port": 465,
+        "user": "you@example.com",
+        "pass": "secret",
+        "tls": true
+      },
+      "mail": { "defaultFrom": "you@example.com", "draftsFolder": "Drafts", "sentFolder": "Sent" }
+    }
+  ]
+}
