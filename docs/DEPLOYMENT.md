@@ -178,6 +178,7 @@ certbot --nginx -d mcp-mail.example.com
 claude.ai will only connect to remote MCP servers that advertise OAuth 2.1 discovery. To support that, run a thin OAuth shim in front of the connector. A reference implementation lives at <https://github.com/markusstoeger/mcp-oauth-shim>.
 
 The shim:
+
 - Implements `/.well-known/oauth-authorization-server`, `/authorize`, `/token`, `/register`, `/jwks.json`
 - Validates Claude's PKCE flow + DCR registration
 - Forwards `/mcp` traffic to the connector with the upstream Bearer header injected

@@ -16,31 +16,31 @@ Exposes 14 MCP tools to Claude:
 
 **Accounts (1)**
 
-| Tool | Purpose |
-|------|---------|
+| Tool            | Purpose                                                                                                   |
+| --------------- | --------------------------------------------------------------------------------------------------------- |
 | `list_accounts` | List all configured mailboxes — id, label, default flag, From, CalDAV-enabled. Never returns credentials. |
 
 **Mail (9)**
 
-| Tool | Purpose |
-|------|---------|
-| `list_folders` | Enumerate IMAP mailboxes (`INBOX`, `Sent`, …) |
-| `list_messages` | Newest N messages in a folder |
+| Tool              | Purpose                                                   |
+| ----------------- | --------------------------------------------------------- |
+| `list_folders`    | Enumerate IMAP mailboxes (`INBOX`, `Sent`, …)             |
+| `list_messages`   | Newest N messages in a folder                             |
 | `search_messages` | Server-side IMAP search (from/to/subject/body/date/flags) |
-| `get_message` | Full body + headers + attachment metadata |
-| `send_message` | Send via SMTP, optionally copy to Sent folder |
-| `create_draft` | Build RFC-822 and APPEND to Drafts |
-| `mark_read` | Toggle `\Seen` flag |
-| `move_message` | Move between folders |
-| `delete_message` | Delete (destructive — prefer move to Trash) |
+| `get_message`     | Full body + headers + attachment metadata                 |
+| `send_message`    | Send via SMTP, optionally copy to Sent folder             |
+| `create_draft`    | Build RFC-822 and APPEND to Drafts                        |
+| `mark_read`       | Toggle `\Seen` flag                                       |
+| `move_message`    | Move between folders                                      |
+| `delete_message`  | Delete (destructive — prefer move to Trash)               |
 
 **Calendar (4)**
 
-| Tool | Purpose |
-|------|---------|
-| `list_calendars` | Discover CalDAV calendars |
-| `list_events` | Events in a time window (recurrences expanded) |
-| `create_event` | Add new event (writes to CalDAV) |
+| Tool             | Purpose                                             |
+| ---------------- | --------------------------------------------------- |
+| `list_calendars` | Discover CalDAV calendars                           |
+| `list_events`    | Events in a time window (recurrences expanded)      |
+| `create_event`   | Add new event (writes to CalDAV)                    |
 | `find_free_slot` | Compute free intervals across one or more calendars |
 
 Every tool accepts an optional `account: "<id>"` parameter to pick a mailbox; omit it to use the default account. So "list unread in INBOX of work account" vs "compare today's calendar across work and personal" both work in one connector.
@@ -81,8 +81,20 @@ The server boots with **no mailboxes configured** — that's fine. Add them via 
       "id": "main",
       "label": "Main",
       "default": true,
-      "imap": { "host": "imap.mailbox.org", "port": 993, "user": "you@example.com", "pass": "secret", "tls": true },
-      "smtp": { "host": "smtp.mailbox.org", "port": 465, "user": "you@example.com", "pass": "secret", "tls": true },
+      "imap": {
+        "host": "imap.mailbox.org",
+        "port": 993,
+        "user": "you@example.com",
+        "pass": "secret",
+        "tls": true
+      },
+      "smtp": {
+        "host": "smtp.mailbox.org",
+        "port": 465,
+        "user": "you@example.com",
+        "pass": "secret",
+        "tls": true
+      },
       "mail": { "defaultFrom": "you@example.com", "draftsFolder": "Drafts", "sentFolder": "Sent" }
     }
   ]
@@ -120,22 +132,22 @@ For local testing without a shim, you can call `/mcp` directly with `Authorizati
 
 ### App passwords (mandatory on 2FA accounts)
 
-| Provider | IMAP host | SMTP host | App password page |
-|----------|-----------|-----------|---------------------|
-| Mailbox.org | `imap.mailbox.org:993` | `smtp.mailbox.org:465` | App passwords aren't needed; main password works |
-| Fastmail | `imap.fastmail.com:993` | `smtp.fastmail.com:465` | <https://app.fastmail.com/settings/security/devicekeys> |
-| iCloud | `imap.mail.me.com:993` | `smtp.mail.me.com:587` (STARTTLS) | <https://appleid.apple.com> → App-Specific Passwords |
-| Gmail | `imap.gmail.com:993` | `smtp.gmail.com:465` | <https://myaccount.google.com/apppasswords> |
-| Mailcow / iRedMail / Postfix | your server | your server | n/a |
+| Provider                     | IMAP host               | SMTP host                         | App password page                                       |
+| ---------------------------- | ----------------------- | --------------------------------- | ------------------------------------------------------- |
+| Mailbox.org                  | `imap.mailbox.org:993`  | `smtp.mailbox.org:465`            | App passwords aren't needed; main password works        |
+| Fastmail                     | `imap.fastmail.com:993` | `smtp.fastmail.com:465`           | <https://app.fastmail.com/settings/security/devicekeys> |
+| iCloud                       | `imap.mail.me.com:993`  | `smtp.mail.me.com:587` (STARTTLS) | <https://appleid.apple.com> → App-Specific Passwords    |
+| Gmail                        | `imap.gmail.com:993`    | `smtp.gmail.com:465`              | <https://myaccount.google.com/apppasswords>             |
+| Mailcow / iRedMail / Postfix | your server             | your server                       | n/a                                                     |
 
 ### CalDAV endpoints
 
-| Provider | URL |
-|----------|-----|
-| Fastmail | `https://caldav.fastmail.com/dav/principals/user/USER@fastmail.com/` |
-| Mailbox.org | `https://dav.mailbox.org/caldav/` |
-| iCloud | `https://caldav.icloud.com/` |
-| Nextcloud | `https://cloud.example.com/remote.php/dav/principals/users/USER/` |
+| Provider    | URL                                                                  |
+| ----------- | -------------------------------------------------------------------- |
+| Fastmail    | `https://caldav.fastmail.com/dav/principals/user/USER@fastmail.com/` |
+| Mailbox.org | `https://dav.mailbox.org/caldav/`                                    |
+| iCloud      | `https://caldav.icloud.com/`                                         |
+| Nextcloud   | `https://cloud.example.com/remote.php/dav/principals/users/USER/`    |
 
 If your provider doesn't speak CalDAV, leave `CALDAV_URL` empty and the calendar tools won't be registered. Mail still works.
 

@@ -128,7 +128,7 @@ export class ImapClient {
 
   async listMessages(
     mailbox: string,
-    opts: { limit?: number; unreadOnly?: boolean } = {}
+    opts: { limit?: number; unreadOnly?: boolean } = {},
   ): Promise<MessageSummary[]> {
     const client = await this.ensureConnected();
     const lock = await client.getMailboxLock(mailbox);
@@ -159,7 +159,7 @@ export class ImapClient {
   async searchMessages(
     mailbox: string,
     criteria: SearchCriteria,
-    limit = 25
+    limit = 25,
   ): Promise<MessageSummary[]> {
     const client = await this.ensureConnected();
     const lock = await client.getMailboxLock(mailbox);
@@ -193,7 +193,7 @@ export class ImapClient {
       const msg = await client.fetchOne(
         `${uid}`,
         { source: true, envelope: true, flags: true, internalDate: true, size: true },
-        { uid: true }
+        { uid: true },
       );
       if (!msg) {
         throw new Error(`Message UID ${uid} not found in ${mailbox}`);
@@ -203,16 +203,15 @@ export class ImapClient {
         uid: msg.uid as number,
         seq: msg.seq as number,
         flags: Array.from(msg.flags ?? []),
-        date:
-          (msg.internalDate as Date | undefined)?.toISOString() ?? null,
+        date: (msg.internalDate as Date | undefined)?.toISOString() ?? null,
         subject: parsed.subject ?? null,
         from: parsed.from?.text ?? null,
         to: Array.isArray(parsed.to)
           ? parsed.to.map((a) => a.text).join(", ")
-          : parsed.to?.text ?? null,
+          : (parsed.to?.text ?? null),
         cc: Array.isArray(parsed.cc)
           ? parsed.cc.map((a) => a.text).join(", ")
-          : parsed.cc?.text ?? null,
+          : (parsed.cc?.text ?? null),
         size: (msg.size as number | undefined) ?? null,
         preview: parsed.text ? parsed.text.slice(0, 200) : null,
         messageId: parsed.messageId ?? null,
@@ -236,11 +235,7 @@ export class ImapClient {
     }
   }
 
-  async markRead(
-    mailbox: string,
-    uid: number,
-    read: boolean
-  ): Promise<void> {
+  async markRead(mailbox: string, uid: number, read: boolean): Promise<void> {
     const client = await this.ensureConnected();
     const lock = await client.getMailboxLock(mailbox);
     try {
@@ -254,11 +249,7 @@ export class ImapClient {
     }
   }
 
-  async moveMessage(
-    sourceMailbox: string,
-    uid: number,
-    destinationMailbox: string
-  ): Promise<void> {
+  async moveMessage(sourceMailbox: string, uid: number, destinationMailbox: string): Promise<void> {
     const client = await this.ensureConnected();
     const lock = await client.getMailboxLock(sourceMailbox);
     try {
@@ -282,11 +273,7 @@ export class ImapClient {
    * Append a raw RFC 822 message to a folder — used for drafts and for
    * keeping a copy of sent messages.
    */
-  async append(
-    mailbox: string,
-    raw: string | Buffer,
-    flags: string[]
-  ): Promise<void> {
+  async append(mailbox: string, raw: string | Buffer, flags: string[]): Promise<void> {
     const client = await this.ensureConnected();
     await client.append(mailbox, raw, flags);
   }
@@ -294,7 +281,7 @@ export class ImapClient {
   private async fetchRange(
     client: ImapFlow,
     range: string,
-    byUid: boolean
+    byUid: boolean,
   ): Promise<MessageSummary[]> {
     const out: MessageSummary[] = [];
     const fetchOpts = {
@@ -312,10 +299,7 @@ export class ImapClient {
 }
 
 function addrText(
-  addr:
-    | { name?: string; address?: string }[]
-    | { name?: string; address?: string }
-    | undefined
+  addr: { name?: string; address?: string }[] | { name?: string; address?: string } | undefined,
 ): string | null {
   if (!addr) return null;
   const list = Array.isArray(addr) ? addr : [addr];

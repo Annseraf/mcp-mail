@@ -9,7 +9,8 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 // Weak/strong copyleft and source-available licenses we refuse by default.
-const DENY = /\b(A?GPL|LGPL|MPL|EPL|EUPL|CDDL|CPAL|OSL|SSPL|BUSL|CC-BY-SA|CC-BY-NC|RPL|Sleepycat)\b/i;
+const DENY =
+  /\b(A?GPL|LGPL|MPL|EPL|EUPL|CDDL|CPAL|OSL|SSPL|BUSL|CC-BY-SA|CC-BY-NC|RPL|Sleepycat)\b/i;
 
 // package name -> allowed license expression. Keep reasons next to entries.
 const ALLOW = {
@@ -48,7 +49,9 @@ for (const [id, info] of Object.entries(deps)) {
 
 if (problems.length) {
   console.error("Disallowed licenses in production dependencies:\n  " + problems.join("\n  "));
-  console.error("\nIf one is acceptable, add it to ALLOW in scripts/check-licenses.mjs with a reason.");
+  console.error(
+    "\nIf one is acceptable, add it to ALLOW in scripts/check-licenses.mjs with a reason.",
+  );
   process.exit(1);
 }
 console.log(`License check passed (${Object.keys(deps).length - 1} production packages).`);

@@ -27,7 +27,7 @@ const VERSION = "0.2.1";
 function log(
   level: "debug" | "info" | "warn" | "error",
   message: string,
-  extra?: Record<string, unknown>
+  extra?: Record<string, unknown>,
 ): void {
   const order = { debug: 0, info: 1, warn: 2, error: 3 };
   if (order[level] < order[config.logLevel]) return;
@@ -68,7 +68,7 @@ async function main(): Promise<void> {
     pool.resetAll().catch((err) =>
       log("warn", "client pool reset failed", {
         error: err instanceof Error ? err.message : String(err),
-      })
+      }),
     );
   });
   log("info", "accounts loaded", {

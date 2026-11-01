@@ -9,9 +9,7 @@
 function required(name: string): string {
   const value = process.env[name];
   if (!value || value.trim() === "") {
-    throw new Error(
-      `Missing required environment variable: ${name}. See .env.example.`
-    );
+    throw new Error(`Missing required environment variable: ${name}. See .env.example.`);
   }
   return value;
 }
@@ -40,21 +38,14 @@ export const config = {
    * case you're on your own re. TLS, rate-limiting, etc.
    */
   host: optional("HOST", "127.0.0.1"),
-  logLevel: optional("LOG_LEVEL", "info") as
-    | "debug"
-    | "info"
-    | "warn"
-    | "error",
+  logLevel: optional("LOG_LEVEL", "info") as "debug" | "info" | "warn" | "error",
 
   /**
    * Path to the multi-account credentials file managed by the OAuth shim's
    * /settings UI. Default suits the published deployment recipe; OSS users
    * can override.
    */
-  accountsFile: optional(
-    "ACCOUNTS_FILE",
-    "/root/.config/mail-mcp/accounts.json"
-  ),
+  accountsFile: optional("ACCOUNTS_FILE", "/root/.config/mail-mcp/accounts.json"),
 
   /**
    * Bearer token a client must present in the Authorization header when

@@ -77,9 +77,7 @@ export class SmtpClient {
   async buildRawSource(msg: OutgoingMessage): Promise<Buffer> {
     const mail = this.toMailOptions(msg);
     // Lazy import to keep startup light.
-    const { default: MailComposer } = await import(
-      "nodemailer/lib/mail-composer/index.js"
-    );
+    const { default: MailComposer } = await import("nodemailer/lib/mail-composer/index.js");
     const composer = new MailComposer(mail);
     return await new Promise<Buffer>((resolve, reject) => {
       composer.compile().build((err, message) => {

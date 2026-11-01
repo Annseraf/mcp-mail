@@ -4,7 +4,13 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AccountsStore } from "../src/accounts.js";
 
-const creds = { host: "imap.example.com", port: 993, user: "you@example.com", pass: "s3cret", tls: true };
+const creds = {
+  host: "imap.example.com",
+  port: 993,
+  user: "you@example.com",
+  pass: "s3cret",
+  tls: true,
+};
 
 const fixture = {
   version: 1,

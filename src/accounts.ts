@@ -88,11 +88,14 @@ export class AccountsStoreError extends Error {
 }
 
 export class NoSuchAccountError extends Error {
-  constructor(public readonly accountId: string, availableIds: string[]) {
+  constructor(
+    public readonly accountId: string,
+    availableIds: string[],
+  ) {
     super(
       availableIds.length === 0
         ? `No mailbox accounts configured yet. Open the setup page at the connector's /settings URL to add one.`
-        : `Account "${accountId}" is not configured. Available: ${availableIds.join(", ")}.`
+        : `Account "${accountId}" is not configured. Available: ${availableIds.join(", ")}.`,
     );
     this.name = "NoSuchAccountError";
   }
@@ -232,7 +235,7 @@ export class AccountsStore {
                 level: "error",
                 msg: "accounts.json reload failed",
                 error: err instanceof Error ? err.message : String(err),
-              })
+              }),
             );
           });
         }, 150);
@@ -244,7 +247,7 @@ export class AccountsStore {
           level: "warn",
           msg: "accounts.json watch failed; hot reload disabled",
           error: err instanceof Error ? err.message : String(err),
-        })
+        }),
       );
     }
   }
@@ -256,7 +259,7 @@ function parseAccountsFile(raw: string): AccountsFile {
     json = JSON.parse(raw);
   } catch (err) {
     throw new AccountsStoreError(
-      `accounts.json is not valid JSON: ${err instanceof Error ? err.message : err}`
+      `accounts.json is not valid JSON: ${err instanceof Error ? err.message : err}`,
     );
   }
   if (!json || typeof json !== "object") {
@@ -288,7 +291,7 @@ function parseAccount(raw: unknown, index: number): Account {
   const id = expectStr(a.id, `accounts[${index}].id`);
   if (!ID_PATTERN.test(id)) {
     throw new AccountsStoreError(
-      `accounts[${index}].id must match ${ID_PATTERN} (a-z, 0-9, _, -; 1-32 chars; start alphanumeric)`
+      `accounts[${index}].id must match ${ID_PATTERN} (a-z, 0-9, _, -; 1-32 chars; start alphanumeric)`,
     );
   }
   return {
@@ -337,15 +340,12 @@ function parseMail(raw: unknown, where: string): MailDefaults {
   const o = raw as Record<string, unknown>;
   const sentRaw = o.sentFolder;
   const sentFolder =
-    sentRaw === null || sentRaw === ""
-      ? null
-      : typeof sentRaw === "string"
-        ? sentRaw
-        : "Sent";
+    sentRaw === null || sentRaw === "" ? null : typeof sentRaw === "string" ? sentRaw : "Sent";
   return {
     defaultFrom: expectStr(o.defaultFrom, `${where}.defaultFrom`),
     defaultFromName: typeof o.defaultFromName === "string" ? o.defaultFromName : undefined,
-    draftsFolder: typeof o.draftsFolder === "string" && o.draftsFolder.length > 0 ? o.draftsFolder : "Drafts",
+    draftsFolder:
+      typeof o.draftsFolder === "string" && o.draftsFolder.length > 0 ? o.draftsFolder : "Drafts",
     sentFolder,
   };
 }

@@ -4,9 +4,9 @@
 
 Until v1.0, only the latest minor release is supported with security fixes.
 
-| Version | Supported |
-|---------|-----------|
-| 0.2.x   | yes       |
+| Version | Supported                                                |
+| ------- | -------------------------------------------------------- |
+| 0.2.x   | yes                                                      |
 | 0.1.x   | no — upgrade to 0.2.1 (see [CHANGELOG.md](CHANGELOG.md)) |
 
 ## Reporting a vulnerability
@@ -40,6 +40,7 @@ If the report is valid, a fix is published as a patch release and a GitHub Secur
 ## Threat model
 
 **Assets we protect:**
+
 - Mailbox credentials (IMAP/SMTP/CalDAV passwords in `accounts.json`)
 - Email content (read access, write access, deletion)
 - Calendar data
@@ -47,6 +48,7 @@ If the report is valid, a fix is published as a patch release and a GitHub Secur
 - The OAuth signing key
 
 **Adversaries we consider:**
+
 - Random internet attacker (port scan, brute force)
 - Malicious page loaded in the operator's browser (CSRF against `/settings`)
 - Compromised network path between Claude.ai and the connector (MITM)
@@ -54,6 +56,7 @@ If the report is valid, a fix is published as a patch release and a GitHub Secur
 - Local-system attacker (other processes on the same host)
 
 **Out of scope:**
+
 - A root-level compromise of the host. With root, all credentials are recoverable from `/var/lib/mail-mcp/accounts.json` — same security boundary as `~/.ssh/id_rsa` or `/etc/shadow`. We do not attempt at-rest encryption that depends on a key also stored on the same host.
 - Compromise of the upstream mailbox provider.
 - Phishing of the operator's htpasswd login.
@@ -61,11 +64,13 @@ If the report is valid, a fix is published as a patch release and a GitHub Secur
 ## What this project does
 
 ### Transport
+
 - TLS terminated by nginx, certificate from Let's Encrypt (90-day rotation by `certbot.timer`).
 - HSTS, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex` on every response.
 - Backend and OAuth shim bound to `127.0.0.1` only. systemd kernel-level network filter (`IPAddressDeny=any`, `IPAddressAllow=127.0.0.1/32`) on the shim as a backstop.
 
 ### Authentication
+
 - OAuth 2.1 + Dynamic Client Registration (RFC 7591) + PKCE (S256).
 - JWT access tokens (RS256, 1h TTL), refresh tokens (30d, stored as SHA-256 hashes).
 - Human login via htpasswd; brute-force throttled by nginx (`limit_req`, 10 req/min per IP).
@@ -73,23 +78,27 @@ If the report is valid, a fix is published as a patch release and a GitHub Secur
 - `/settings` POST endpoints additionally protected by Origin/Referer CSRF guard.
 
 ### Process isolation
+
 - Both processes (backend + shim) run as the dedicated non-root `mailmcp` system user (no shell, no home directory).
 - systemd hardening: `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, `PrivateDevices`, `ProtectKernel*`, `ProtectControlGroups`, `ProtectClock`, `ProtectHostname`, `ProtectProc=invisible`, `RestrictNamespaces`, `RestrictRealtime`, `RestrictSUIDSGID`, `LockPersonality`, `SystemCallFilter=@system-service ~@privileged @resources`.
 - Writable filesystem limited to `/var/lib/mail-mcp` (state dir).
 - Memory and task caps via `MemoryMax`, `TasksMax`, `LimitNOFILE`.
 
 ### Credentials at rest
+
 - `accounts.json` and `token` files are owned by `mailmcp:mailmcp` and chmod 600.
 - `.env` is `root:mailmcp` 640 (root can edit, the service can read).
 - htpasswd file is `root:mailmcp` 640 (not world-readable).
 
 ### Input validation
+
 - Every MCP tool input validated with [Zod](https://zod.dev) schemas.
 - `accounts.json` schema-validated on every load (id pattern, port ranges, required fields).
 - `/settings/save` re-validates all fields and rejects bad input with a redirect.
 - Subprocess invocations (`htpasswd -vb`) use `execFile` (no shell) with a regex-gated username (`[a-zA-Z0-9_.-]{1,64}`) and a length-bounded password.
 
 ### Output filtering
+
 - `list_accounts` returns id/label/default/From/imap_host/caldav_enabled — never credentials.
 - `/health` shows the same public summary.
 - Server logs never include passwords or Bearer tokens.

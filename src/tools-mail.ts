@@ -30,15 +30,9 @@ const recipientSchema = z.union([z.string(), z.array(z.string()).min(1)]);
 const accountSchema = z
   .string()
   .optional()
-  .describe(
-    "Account ID (from list_accounts) to act on. Omit to use the default account."
-  );
+  .describe("Account ID (from list_accounts) to act on. Omit to use the default account.");
 
-export function registerMailTools(
-  server: McpServer,
-  pool: ClientPool,
-  store: AccountsStore
-): void {
+export function registerMailTools(server: McpServer, pool: ClientPool, store: AccountsStore): void {
   server.registerTool(
     "list_accounts",
     {
@@ -56,7 +50,7 @@ export function registerMailTools(
             ? "No accounts configured yet. Open the connector's /settings page to add one."
             : undefined,
       });
-    }
+    },
   );
 
   server.registerTool(
@@ -71,7 +65,7 @@ export function registerMailTools(
     async ({ account }) => {
       const { imap } = pool.for(account);
       return asJson(await imap.listMailboxes());
-    }
+    },
   );
 
   server.registerTool(
@@ -80,9 +74,7 @@ export function registerMailTools(
       description:
         "List the newest messages in a mailbox (newest first). Returns headers + a short preview, NOT the full body — use get_message for the body.",
       inputSchema: {
-        mailbox: z
-          .string()
-          .describe("IMAP folder path (e.g. 'INBOX', 'Sent', 'Archive/2026')"),
+        mailbox: z.string().describe("IMAP folder path (e.g. 'INBOX', 'Sent', 'Archive/2026')"),
         limit: z
           .number()
           .int()
@@ -90,10 +82,7 @@ export function registerMailTools(
           .max(200)
           .optional()
           .describe("Max messages to return (default 25)"),
-        unread_only: z
-          .boolean()
-          .optional()
-          .describe("Return only unread messages"),
+        unread_only: z.boolean().optional().describe("Return only unread messages"),
         account: accountSchema,
       },
     },
@@ -103,8 +92,13 @@ export function registerMailTools(
         limit,
         unreadOnly: unread_only,
       });
-      return asJson({ mailbox, account: account ?? "(default)", count: list.length, messages: list });
-    }
+      return asJson({
+        mailbox,
+        account: account ?? "(default)",
+        count: list.length,
+        messages: list,
+      });
+    },
   );
 
   server.registerTool(
@@ -117,10 +111,7 @@ export function registerMailTools(
         from: z.string().optional().describe("Substring match in From: header"),
         to: z.string().optional().describe("Substring match in To: header"),
         subject: z.string().optional().describe("Substring match in Subject:"),
-        body: z
-          .string()
-          .optional()
-          .describe("Substring match in the message body"),
+        body: z.string().optional().describe("Substring match in the message body"),
         since: z
           .string()
           .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -131,14 +122,8 @@ export function registerMailTools(
           .regex(/^\d{4}-\d{2}-\d{2}$/)
           .optional()
           .describe("Match messages strictly before this date (YYYY-MM-DD)"),
-        unread: z
-          .boolean()
-          .optional()
-          .describe("true = unread only, false = read only"),
-        flagged: z
-          .boolean()
-          .optional()
-          .describe("true = flagged only, false = unflagged only"),
+        unread: z.boolean().optional().describe("true = unread only, false = read only"),
+        flagged: z.boolean().optional().describe("true = flagged only, false = unflagged only"),
         limit: z.number().int().min(1).max(200).optional(),
         account: accountSchema,
       },
@@ -146,8 +131,13 @@ export function registerMailTools(
     async ({ mailbox, limit, account, ...criteria }) => {
       const { imap } = pool.for(account);
       const list = await imap.searchMessages(mailbox, criteria, limit ?? 25);
-      return asJson({ mailbox, account: account ?? "(default)", count: list.length, messages: list });
-    }
+      return asJson({
+        mailbox,
+        account: account ?? "(default)",
+        count: list.length,
+        messages: list,
+      });
+    },
   );
 
   server.registerTool(
@@ -168,7 +158,7 @@ export function registerMailTools(
     async ({ mailbox, uid, account }) => {
       const { imap } = pool.for(account);
       return asJson(await imap.getMessage(mailbox, uid));
-    }
+    },
   );
 
   server.registerTool(
@@ -177,19 +167,14 @@ export function registerMailTools(
       description:
         "Send an email via SMTP. WRITE OPERATION — the message goes out immediately. Use create_draft instead if you want to review before sending. Saves a copy in the Sent folder if configured. For replies, pass in_reply_to + references from the original get_message result.",
       inputSchema: {
-        to: recipientSchema.describe(
-          "Recipient(s). String or array of email addresses."
-        ),
+        to: recipientSchema.describe("Recipient(s). String or array of email addresses."),
         subject: z.string().min(1).describe("Subject line"),
         text: z.string().optional().describe("Plain-text body"),
         html: z.string().optional().describe("HTML body"),
         cc: recipientSchema.optional(),
         bcc: recipientSchema.optional(),
         reply_to: z.string().optional().describe("Reply-To header"),
-        in_reply_to: z
-          .string()
-          .optional()
-          .describe("Message-ID being replied to (for threading)"),
+        in_reply_to: z.string().optional().describe("Message-ID being replied to (for threading)"),
         references: z
           .array(z.string())
           .optional()
@@ -200,7 +185,7 @@ export function registerMailTools(
               filename: z.string(),
               content_base64: z.string(),
               content_type: z.string().optional(),
-            })
+            }),
           )
           .optional(),
         account: accountSchema,
@@ -254,7 +239,7 @@ export function registerMailTools(
         }
       }
       return asJson({ ...result, saved_to_sent: savedToSent });
-    }
+    },
   );
 
   server.registerTool(
@@ -295,7 +280,7 @@ export function registerMailTools(
         folder: draftsFolder,
         bytes: raw.length,
       });
-    }
+    },
   );
 
   server.registerTool(
@@ -314,7 +299,7 @@ export function registerMailTools(
       const { imap } = pool.for(account);
       await imap.markRead(mailbox, uid, read);
       return asJson({ success: true, mailbox, uid, read });
-    }
+    },
   );
 
   server.registerTool(
@@ -338,7 +323,7 @@ export function registerMailTools(
         to: destination_mailbox,
         uid,
       });
-    }
+    },
   );
 
   server.registerTool(
@@ -356,6 +341,6 @@ export function registerMailTools(
       const { imap } = pool.for(account);
       await imap.deleteMessage(mailbox, uid);
       return asJson({ success: true, mailbox, uid });
-    }
+    },
   );
 }
