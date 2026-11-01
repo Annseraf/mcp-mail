@@ -1,5 +1,7 @@
 # claude-mail-mcp
 
+> **mcp-mail** is a maintained continuation of [claude-mail-mcp](https://github.com/maxx3250/claude-mail-mcp) by Markus Stöger (MIT). Upstream history and copyright are preserved; see [NOTICE](NOTICE). This README will be rewritten as the fork evolves.
+
 Self-hosted **IMAP / SMTP / CalDAV connector for Claude** with multi-account support. A Streamable HTTP MCP server that lets [Claude.ai](https://claude.ai) read and write your email + calendar against any RFC-compliant mailbox.
 
 > Built because every other Claude email connector targets Gmail. This one is for the rest of us — Mailbox.org, Fastmail, iCloud, Mailcow, iRedMail, Migadu, Nextcloud, your own Postfix box. If your provider speaks IMAP, SMTP and CalDAV, this works. One connector, all your inboxes.
