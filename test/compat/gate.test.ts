@@ -84,10 +84,16 @@ describe("compatibility gate", () => {
     expect(res.status).toBe(401);
   });
 
-  it("serves concurrent requests", async () => {
+  it("serves concurrent requests that overlap in time", async () => {
+    // list_folders does real IMAP I/O, so these requests are in flight together.
     const call = await legacySession(server);
     const results = await Promise.all(
-      Array.from({ length: 8 }, () => call("tools/call", { name: "list_accounts", arguments: {} })),
+      Array.from({ length: 8 }, (_, i) =>
+        call("tools/call", {
+          name: "list_folders",
+          arguments: { account: i % 2 ? "work" : "main" },
+        }),
+      ),
     );
     for (const r of results) {
       expect(r.status).toBe(200);

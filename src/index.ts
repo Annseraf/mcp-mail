@@ -12,6 +12,7 @@
  * CalDAV error friendly if the resolved account has none configured.
  */
 
+import { timingSafeEqual } from "node:crypto";
 import express, { NextFunction, Request, Response } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -40,10 +41,17 @@ function log(
   console.error(JSON.stringify(line));
 }
 
+const expectedToken = Buffer.from(config.authToken);
+
+function tokenMatches(candidate: string): boolean {
+  const given = Buffer.from(candidate);
+  return given.length === expectedToken.length && timingSafeEqual(given, expectedToken);
+}
+
 function bearerAuth(req: Request, res: Response, next: NextFunction): void {
   const header = req.header("authorization") ?? "";
   const match = /^Bearer\s+(.+)$/i.exec(header);
-  if (!match || match[1] !== config.authToken) {
+  if (!match || !tokenMatches(match[1])) {
     log("warn", "rejected unauthenticated MCP request", {
       ip: req.ip,
       path: req.path,
@@ -77,12 +85,17 @@ async function main(): Promise<void> {
     ids: store.ids(),
   });
 
-  const mcp = new McpServer({
-    name: "claude-mail-mcp",
-    version: VERSION,
-  });
-  registerMailTools(mcp, pool, store);
-  registerCalendarTools(mcp, pool);
+  // One McpServer per request: a Protocol instance can only be connected to
+  // one transport at a time, so a shared instance rejects concurrent requests.
+  const createMcpServer = (): McpServer => {
+    const mcp = new McpServer({
+      name: "claude-mail-mcp",
+      version: VERSION,
+    });
+    registerMailTools(mcp, pool, store);
+    registerCalendarTools(mcp, pool);
+    return mcp;
+  };
 
   const app = express();
   app.disable("x-powered-by");
@@ -104,8 +117,10 @@ async function main(): Promise<void> {
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
     });
+    const mcp = createMcpServer();
     res.on("close", () => {
       transport.close().catch(() => {});
+      mcp.close().catch(() => {});
     });
     try {
       await mcp.connect(transport);
