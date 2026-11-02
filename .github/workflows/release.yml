@@ -6,6 +6,12 @@ name: Release
 on:
   push:
     branches: [main]
+  # Re-publish an existing tag (e.g. after fixing this workflow). Builds from the tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build and publish (e.g. v1.0.0)
+        required: true
 
 permissions:
   contents: read
@@ -17,11 +23,12 @@ jobs:
       contents: write
       pull-requests: write
     outputs:
-      created: ${{ steps.rp.outputs.release_created }}
-      tag: ${{ steps.rp.outputs.tag_name }}
+      created: ${{ steps.rp.outputs.release_created || (inputs.tag != '' && 'true') || '' }}
+      tag: ${{ steps.rp.outputs.tag_name || inputs.tag }}
       version: ${{ steps.rp.outputs.version }}
     steps:
       - id: rp
+        if: github.event_name == 'push'
         uses: googleapis/release-please-action@v5
         with:
           config-file: release-please-config.json
@@ -47,12 +54,10 @@ jobs:
           cache: npm
           registry-url: https://registry.npmjs.org
       - run: npm ci
-      - run: npm run build
-        env:
-          BUILD_COMMIT: ${{ github.sha }}
+      - run: BUILD_COMMIT="$(git rev-parse HEAD)" npm run build
       - name: Package tarball + checksums
         run: scripts/pack-release.sh release
-      - uses: sigstore/cosign-installer@v4
+      - uses: sigstore/cosign-installer@v4.1.2
       - name: Sign tarball (keyless, Sigstore)
         run: |
           for f in release/*.tar.gz; do
@@ -98,6 +103,8 @@ jobs:
             type=semver,pattern={{version}},value=${{ needs.release-please.outputs.tag }}
             type=semver,pattern={{major}},value=${{ needs.release-please.outputs.tag }}
             type=raw,value=latest
+      - id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - id: push
         uses: docker/build-push-action@v7
         with:
@@ -106,7 +113,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: BUILD_COMMIT=${{ github.sha }}
+          build-args: BUILD_COMMIT=${{ steps.commit.outputs.sha }}
       - uses: actions/attest-build-provenance@v4
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/mcp-mail
