@@ -2,6 +2,13 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.0.2](https://github.com/Annseraf/mcp-mail/compare/v1.0.1...v1.0.2) (2026-11-02)
+
+
+### Bug Fixes
+
+* use the case-sensitive io.github.Annseraf MCP Registry namespace ([#21](https://github.com/Annseraf/mcp-mail/issues/21)) ([9339025](https://github.com/Annseraf/mcp-mail/commit/93390250ec5d3b88f425390ab2087a39ecd90423))
+
 ## [1.0.1](https://github.com/Annseraf/mcp-mail/compare/v1.0.0...v1.0.1) (2026-11-02)
 
 
