@@ -12,8 +12,8 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { positiveInt } from "./schemas.js";
-import { ClientPool } from "./client-pool.js";
-import { AccountsStore } from "./accounts.js";
+import { PoolLike } from "./client-pool.js";
+import { AccountSource } from "./accounts.js";
 
 function asJson(value: unknown): { content: { type: "text"; text: string }[] } {
   return {
@@ -33,7 +33,7 @@ const accountSchema = z
   .optional()
   .describe("Account ID (from list_accounts) to act on. Omit to use the default account.");
 
-export function registerMailTools(server: McpServer, pool: ClientPool, store: AccountsStore): void {
+export function registerMailTools(server: McpServer, pool: PoolLike, store: AccountSource): void {
   server.registerTool(
     "list_accounts",
     {

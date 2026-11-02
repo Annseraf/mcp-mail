@@ -58,6 +58,15 @@ export class SmtpClient {
     this.defaults = defaults;
   }
 
+  /** Connect and authenticate without sending (used by the admin API's mailbox test). */
+  async verify(): Promise<void> {
+    try {
+      await this.transporter.verify();
+    } finally {
+      this.transporter.close();
+    }
+  }
+
   async send(msg: OutgoingMessage): Promise<SendResult> {
     const mail = this.toMailOptions(msg);
     const info = await this.transporter.sendMail(mail);

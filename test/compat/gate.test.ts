@@ -84,6 +84,27 @@ describe("compatibility gate", () => {
     });
   }
 
+  it("answers legacy clients with plain JSON, like v0.2.x (no SSE)", async () => {
+    for (const method of ["initialize", "tools/list"]) {
+      const res = await server.raw(
+        {
+          jsonrpc: "2.0",
+          id: 1,
+          method,
+          params: {
+            protocolVersion: "2025-06-18",
+            capabilities: {},
+            clientInfo: { name: "x", version: "1" },
+          },
+        },
+        { "mcp-protocol-version": "2025-06-18" },
+      );
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("application/json");
+      expect(res.headers.get("mcp-session-id")).toBeNull();
+    }
+  });
+
   it("rejects requests without the bearer token", async () => {
     const res = await fetch(`${server.url}/mcp`, {
       method: "POST",

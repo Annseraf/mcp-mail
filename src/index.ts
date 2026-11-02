@@ -1,72 +1,51 @@
 #!/usr/bin/env node
 /**
- * claude-mail-mcp — entry point (v0.2).
+ * mcp-mail entry point.
  *
- * Boots an Express server that exposes:
- *   - GET  /health        liveness probe + accounts summary
- *   - POST /mcp           MCP Streamable HTTP transport (Bearer-auth gated)
+ * Single-tenant (default, v0.2.x compatible):
+ *   - GET  /health   liveness probe + accounts summary
+ *   - GET  /version  build identity (version, commit, image digest)
+ *   - POST /mcp      MCP Streamable HTTP (Bearer AUTH_TOKEN), accounts.json
  *
- * v0.2: multi-account per deployment. Credentials live in accounts.json
- * (managed by the OAuth shim's /settings UI), watched via fs.watch for
- * hot-reload. Calendar tools are always registered; tools that require
- * CalDAV error friendly if the resolved account has none configured.
+ * Opt-in platform mode (docs/PLATFORM.md): MULTI_TENANT=true adds
+ * POST /t/<tenantId>/mcp; ADMIN_API=true serves /admin/v1 on a private
+ * interface (ADMIN_HOST/ADMIN_PORT).
  */
-
-import { timingSafeEqual } from "node:crypto";
-import express, { NextFunction, Request, Response } from "express";
-import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
-import { toNodeHandler } from "@modelcontextprotocol/node";
-
-import { config } from "./config.js";
+import type { config as Config } from "./config.js";
 import { AccountsStore } from "./accounts.js";
+import { runCli } from "./cli.js";
 import { ClientPool } from "./client-pool.js";
-import { registerMailTools } from "./tools-mail.js";
-import { registerCalendarTools } from "./tools-calendar.js";
+import { createEngine, listen, type Log } from "./engine.js";
+import { loadPlatformSettings } from "./platform/settings.js";
+import { decryptValue, isEncrypted, loadKey, mapPasswords } from "./platform/local-secrets.js";
+import { buildInfo } from "./version.js";
 
 const VERSION = "0.2.1";
 
-function log(
-  level: "debug" | "info" | "warn" | "error",
-  message: string,
-  extra?: Record<string, unknown>,
-): void {
+// Loaded lazily so CLI commands don't require server env vars (AUTH_TOKEN).
+let config: typeof Config;
+
+const log: Log = (level, message, extra) => {
   const order = { debug: 0, info: 1, warn: 2, error: 3 };
   if (order[level] < order[config.logLevel]) return;
-  const line = {
-    ts: new Date().toISOString(),
-    level,
-    msg: message,
-    ...extra,
-  };
-  console.error(JSON.stringify(line));
-}
-
-const expectedToken = Buffer.from(config.authToken);
-
-function tokenMatches(candidate: string): boolean {
-  const given = Buffer.from(candidate);
-  return given.length === expectedToken.length && timingSafeEqual(given, expectedToken);
-}
-
-function bearerAuth(req: Request, res: Response, next: NextFunction): void {
-  const header = req.header("authorization") ?? "";
-  const match = /^Bearer\s+(.+)$/i.exec(header);
-  if (!match || !tokenMatches(match[1])) {
-    log("warn", "rejected unauthenticated MCP request", {
-      ip: req.ip,
-      path: req.path,
-    });
-    res.status(401).json({
-      error: "unauthorized",
-      message: "Missing or invalid Bearer token",
-    });
-    return;
-  }
-  next();
-}
+  console.error(JSON.stringify({ ts: new Date().toISOString(), level, msg: message, ...extra }));
+};
 
 async function main(): Promise<void> {
-  const store = new AccountsStore(config.accountsFile);
+  ({ config } = await import("./config.js"));
+  const platform = loadPlatformSettings(process.env, config.publicUrl);
+  let decrypt: ((doc: unknown) => void) | undefined;
+  if (process.env.SECRETS_ENCRYPTION === "local") {
+    const keyFile = process.env.SECRETS_KEY_FILE;
+    if (!keyFile) throw new Error("SECRETS_ENCRYPTION=local requires SECRETS_KEY_FILE");
+    const key = await loadKey(keyFile);
+    decrypt = (doc) => {
+      mapPasswords(doc as { accounts?: unknown }, (v) =>
+        isEncrypted(v) ? decryptValue(key, v) : v,
+      );
+    };
+  }
+  const store = new AccountsStore(config.accountsFile, decrypt);
   const pool = new ClientPool(store);
   await store.start((next, prev) => {
     log("info", "accounts.json changed", {
@@ -85,78 +64,45 @@ async function main(): Promise<void> {
     ids: store.ids(),
   });
 
-  // createMcpHandler builds one McpServer per request and serves both
-  // 2026-07-28 (stateless, per-request _meta) clients and 2025-era clients
-  // that start with `initialize` (stateless legacy fallback).
-  const createMcpServer = (): McpServer => {
-    const mcp = new McpServer({
-      name: "claude-mail-mcp",
-      version: VERSION,
-    });
-    registerMailTools(mcp, pool, store);
-    registerCalendarTools(mcp, pool);
-    return mcp;
-  };
-
-  const app = express();
-  app.disable("x-powered-by");
-  app.set("trust proxy", true);
-  app.use(express.json({ limit: "5mb" }));
-
-  app.get("/health", (_req, res) => {
-    res.json({
-      status: "ok",
-      server: "claude-mail-mcp",
-      version: VERSION,
-      accounts: store.publicSummaries(),
-      accounts_file: config.accountsFile,
-    });
+  const engine = await createEngine({
+    version: VERSION,
+    authToken: config.authToken,
+    accountsFile: config.accountsFile,
+    store,
+    pool,
+    platform,
+    log,
   });
 
-  const mcpHandler = toNodeHandler(createMcpHandler(createMcpServer, { responseMode: "json" }));
-  app.post("/mcp", bearerAuth, (req, res) => {
-    mcpHandler(req, res, req.body).catch((err: unknown) => {
-      log("error", "MCP request failed", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      if (!res.headersSent) {
-        res.status(500).json({
-          error: "internal_error",
-          message: err instanceof Error ? err.message : "Unknown error",
-        });
-      }
-    });
+  const servers = [await listen(engine.app, config.port, config.host)];
+  log("info", "claude-mail-mcp listening", {
+    host: config.host,
+    port: config.port,
+    version: VERSION,
+    commit: buildInfo().commit,
+    public_url: config.publicUrl,
+    accounts_file: config.accountsFile,
+    accounts: store.ids(),
+    multi_tenant: platform.multiTenant,
   });
-
-  app.use((req, res) => {
-    res.status(404).json({
-      error: "not_found",
-      message: `${req.method} ${req.path} is not a valid endpoint. Use GET /health or POST /mcp.`,
-    });
-  });
-
-  app.listen(config.port, config.host, () => {
-    log("info", "claude-mail-mcp listening", {
-      host: config.host,
-      port: config.port,
-      version: VERSION,
-      public_url: config.publicUrl,
-      accounts_file: config.accountsFile,
-      accounts: store.ids(),
-    });
-  });
+  if (engine.admin) {
+    servers.push(await listen(engine.admin, platform.adminPort, platform.adminHost));
+    log("info", "admin API listening", { host: platform.adminHost, port: platform.adminPort });
+  }
 
   const shutdown = async (signal: string): Promise<void> => {
     log("info", "shutting down", { signal });
     store.stop();
-    await pool.closeAll().catch(() => {});
+    for (const s of servers) s.close();
+    await Promise.all([pool.closeAll().catch(() => {}), engine.close()]);
     process.exit(0);
   };
   process.on("SIGTERM", () => void shutdown("SIGTERM"));
   process.on("SIGINT", () => void shutdown("SIGINT"));
 }
 
-main().catch((err) => {
+const cli = process.argv[2] === "secrets";
+(cli ? runCli(process.argv.slice(2)).then((code) => process.exit(code)) : main()).catch((err) => {
   console.error("Fatal startup error:", err);
   process.exit(1);
 });

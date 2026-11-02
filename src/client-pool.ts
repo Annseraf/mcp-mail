@@ -10,9 +10,9 @@
 import { ImapClient } from "./imap-client.js";
 import { SmtpClient } from "./smtp-client.js";
 import { CalDavClient } from "./caldav-client.js";
-import { Account, AccountsStore } from "./accounts.js";
+import { Account, AccountSource } from "./accounts.js";
 
-interface AccountClients {
+export interface AccountClients {
   imap: ImapClient;
   smtp: SmtpClient;
   caldav: CalDavClient | null;
@@ -20,11 +20,16 @@ interface AccountClients {
   sentFolder: string | null;
 }
 
-export class ClientPool {
-  private readonly store: AccountsStore;
+/** What tools need from a pool: resolve an account id (or the default) to its clients. */
+export interface PoolLike {
+  for(accountId?: string): AccountClients;
+}
+
+export class ClientPool implements PoolLike {
+  private readonly store: AccountSource;
   private pool: Map<string, AccountClients> = new Map();
 
-  constructor(store: AccountsStore) {
+  constructor(store: AccountSource) {
     this.store = store;
   }
 

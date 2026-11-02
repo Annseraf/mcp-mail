@@ -12,7 +12,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { email } from "./schemas.js";
-import { ClientPool } from "./client-pool.js";
+import { PoolLike } from "./client-pool.js";
 
 function asJson(value: unknown): { content: { type: "text"; text: string }[] } {
   return {
@@ -34,7 +34,7 @@ const accountSchema = z
   .optional()
   .describe("Account ID (from list_accounts) to act on. Omit to use the default account.");
 
-function requireCaldav(pool: ClientPool, accountId?: string) {
+function requireCaldav(pool: PoolLike, accountId?: string) {
   const clients = pool.for(accountId);
   if (!clients.caldav) {
     throw new Error(
@@ -44,7 +44,7 @@ function requireCaldav(pool: ClientPool, accountId?: string) {
   return clients.caldav;
 }
 
-export function registerCalendarTools(server: McpServer, pool: ClientPool): void {
+export function registerCalendarTools(server: McpServer, pool: PoolLike): void {
   server.registerTool(
     "list_calendars",
     {
