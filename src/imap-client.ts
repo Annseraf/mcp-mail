@@ -41,6 +41,23 @@ export interface MessageSummary {
   cc: string | null;
   size: number | null;
   preview: string | null;
+  /** Additive in mcp-mail: threading identifiers from the envelope. */
+  messageId?: string | null;
+  inReplyTo?: string | null;
+}
+
+/** Summary plus the References header, used to group conversations. */
+export interface ThreadMember extends MessageSummary {
+  mailbox: string;
+  references: string[];
+}
+
+export interface AttachmentContent {
+  index: number;
+  filename: string | null;
+  contentType: string;
+  size: number;
+  content_base64: string;
 }
 
 export interface MessageDetail extends MessageSummary {
@@ -49,7 +66,11 @@ export interface MessageDetail extends MessageSummary {
   references: string[];
   bodyText: string | null;
   bodyHtml: string | null;
+  /** True when the message has no text/plain part and bodyText was generated from HTML. */
+  textFromHtml?: boolean;
   attachments: Array<{
+    /** Position in the message; pass to get_attachment. */
+    index: number;
     filename: string | null;
     contentType: string;
     size: number;
@@ -199,7 +220,11 @@ export class ImapClient {
         throw new Error(`Message UID ${uid} not found in ${mailbox}`);
       }
       const parsed: ParsedMail = await simpleParser(msg.source as Buffer);
+      const source = (msg.source as Buffer).toString("latin1");
+      const textFromHtml =
+        typeof parsed.html === "string" && !/content-type:\s*text\/plain/i.test(source);
       return {
+        textFromHtml,
         uid: msg.uid as number,
         seq: msg.seq as number,
         flags: Array.from(msg.flags ?? []),
@@ -223,13 +248,133 @@ export class ImapClient {
             : [],
         bodyText: parsed.text ?? null,
         bodyHtml: typeof parsed.html === "string" ? parsed.html : null,
-        attachments: (parsed.attachments ?? []).map((a) => ({
+        attachments: (parsed.attachments ?? []).map((a, index) => ({
+          index,
           filename: a.filename ?? null,
           contentType: a.contentType,
           size: a.size,
           contentId: a.cid ?? null,
         })),
       };
+    } finally {
+      lock.release();
+    }
+  }
+
+  /** Download one attachment by its index from get_message. Refuses anything over maxBytes. */
+  async getAttachment(
+    mailbox: string,
+    uid: number,
+    index: number,
+    maxBytes: number,
+  ): Promise<AttachmentContent> {
+    const client = await this.ensureConnected();
+    const lock = await client.getMailboxLock(mailbox);
+    try {
+      const msg = await client.fetchOne(`${uid}`, { source: true }, { uid: true });
+      if (!msg) throw new Error(`Message UID ${uid} not found in ${mailbox}`);
+      const parsed: ParsedMail = await simpleParser(msg.source as Buffer);
+      const a = (parsed.attachments ?? [])[index];
+      if (!a) throw new Error(`Message UID ${uid} has no attachment at index ${index}`);
+      if (a.size > maxBytes) {
+        throw new Error(`Attachment is ${a.size} bytes, over the ${maxBytes}-byte limit`);
+      }
+      return {
+        index,
+        filename: a.filename ?? null,
+        contentType: a.contentType,
+        size: a.size,
+        content_base64: a.content.toString("base64"),
+      };
+    } finally {
+      lock.release();
+    }
+  }
+
+  /** Add and remove flags (\\Flagged, \\Answered, \\Seen, custom keywords). Returns the resulting flags. */
+  async setFlags(mailbox: string, uid: number, add: string[], remove: string[]): Promise<string[]> {
+    const client = await this.ensureConnected();
+    const lock = await client.getMailboxLock(mailbox);
+    try {
+      if (add.length) await client.messageFlagsAdd(`${uid}`, add, { uid: true });
+      if (remove.length) await client.messageFlagsRemove(`${uid}`, remove, { uid: true });
+      const msg = await client.fetchOne(`${uid}`, { flags: true }, { uid: true });
+      if (!msg) throw new Error(`Message UID ${uid} not found in ${mailbox}`);
+      return Array.from(msg.flags ?? []);
+    } finally {
+      lock.release();
+    }
+  }
+
+  /** Paths of every folder that can hold messages. */
+  async selectableMailboxes(): Promise<string[]> {
+    const client = await this.ensureConnected();
+    const list = await client.list();
+    return list.filter((m) => !(m.flags ?? new Set()).has("\\Noselect")).map((m) => m.path);
+  }
+
+  /** UIDs in a mailbox whose header contains a value (Message-ID, References, In-Reply-To). */
+  async searchHeader(mailbox: string, header: string, value: string): Promise<number[]> {
+    const client = await this.ensureConnected();
+    const lock = await client.getMailboxLock(mailbox);
+    try {
+      const found = await client.search({ header: { [header]: value } }, { uid: true });
+      return Array.isArray(found) ? found : [];
+    } finally {
+      lock.release();
+    }
+  }
+
+  /** UIDs in a mailbox whose subject contains a string. */
+  async searchSubject(mailbox: string, subject: string): Promise<number[]> {
+    const client = await this.ensureConnected();
+    const lock = await client.getMailboxLock(mailbox);
+    try {
+      const found = await client.search({ subject }, { uid: true });
+      return Array.isArray(found) ? found : [];
+    } finally {
+      lock.release();
+    }
+  }
+
+  /** Summaries plus References for threading. `uids` empty = the newest `limit` messages. */
+  async threadMembers(mailbox: string, uids: number[], limit = 50): Promise<ThreadMember[]> {
+    const client = await this.ensureConnected();
+    const lock = await client.getMailboxLock(mailbox);
+    try {
+      let range: string;
+      let byUid = true;
+      if (uids.length) {
+        range = uids.slice(-200).join(",");
+      } else {
+        const status = await client.status(mailbox, { messages: true });
+        const total = status.messages ?? 0;
+        if (total === 0) return [];
+        range = `${Math.max(1, total - Math.min(limit, 500) + 1)}:*`;
+        byUid = false;
+      }
+      const out: ThreadMember[] = [];
+      for await (const msg of client.fetch(
+        range,
+        {
+          envelope: true,
+          flags: true,
+          internalDate: true,
+          size: true,
+          bodyParts: ["1"],
+          headers: ["references"],
+        },
+        { uid: byUid },
+      )) {
+        const refs = msg.headers
+          ? (msg.headers
+              .toString("utf8")
+              .replace(/^references:/i, "")
+              .match(/<[^>]+>/g) ?? [])
+          : [];
+        out.push({ ...summarize(msg), mailbox, references: refs });
+      }
+      return out;
     } finally {
       lock.release();
     }
@@ -350,5 +495,7 @@ function summarize(msg: FetchMessageObject): MessageSummary {
     cc: addrText(env?.cc),
     size: (msg.size as number | undefined) ?? null,
     preview,
+    messageId: env?.messageId ?? null,
+    inReplyTo: env?.inReplyTo ?? null,
   };
 }

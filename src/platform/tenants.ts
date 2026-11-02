@@ -24,6 +24,7 @@ export interface MailboxRecord {
   mail: {
     defaultFrom: string;
     defaultFromName?: string;
+    signature?: string;
     draftsFolder: string;
     sentFolder: string | null;
   };

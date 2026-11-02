@@ -5,7 +5,15 @@
 import type { Preset } from "../platform/tenants.js";
 
 export type Capability =
-  "read" | "organize" | "draft" | "send" | "destructive" | "calendar-read" | "calendar-write";
+  | "read"
+  | "organize"
+  | "draft"
+  | "send"
+  | "destructive"
+  | "calendar-read"
+  | "calendar-write"
+  /** Change account settings such as sender name and signature. */
+  | "settings";
 
 /** Every tool declares exactly one capability. Unknown tools are treated as destructive. */
 export const TOOL_CAPABILITY: Record<string, Capability> = {
@@ -24,14 +32,36 @@ export const TOOL_CAPABILITY: Record<string, Capability> = {
   list_events: "calendar-read",
   find_free_slot: "calendar-read",
   create_event: "calendar-write",
+  get_attachment: "read",
+  get_thread: "read",
+  list_threads: "read",
+  set_flags: "organize",
+  update_account_settings: "settings",
 };
 
 export const PRESETS: Record<Preset, Capability[]> = {
   "read-only": ["read", "calendar-read"],
   "read-draft": ["read", "calendar-read", "draft"],
   organize: ["read", "calendar-read", "draft", "organize"],
-  "full-no-delete": ["read", "calendar-read", "draft", "organize", "calendar-write", "send"],
-  full: ["read", "calendar-read", "draft", "organize", "calendar-write", "send", "destructive"],
+  "full-no-delete": [
+    "read",
+    "calendar-read",
+    "draft",
+    "organize",
+    "calendar-write",
+    "send",
+    "settings",
+  ],
+  full: [
+    "read",
+    "calendar-read",
+    "draft",
+    "organize",
+    "calendar-write",
+    "send",
+    "settings",
+    "destructive",
+  ],
 };
 
 /** Capability a call needs. Unknown tools are treated as destructive. */

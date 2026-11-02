@@ -310,6 +310,7 @@ const spec = {
         properties: {
           defaultFrom: { type: "string" },
           defaultFromName: { type: ["string", "null"] },
+          signature: { type: ["string", "null"], description: "Appended to sent mail and drafts" },
           draftsFolder: { type: "string", default: "Drafts" },
           sentFolder: { type: ["string", "null"], default: "Sent" },
         },
