@@ -27,6 +27,8 @@ jobs:
       - run: npm run format:check
       - run: npm run typecheck
       - run: npm run licenses
+      - name: OpenAPI spec matches its generator
+        run: npm run openapi && git diff --exit-code openapi/
 
   test:
     name: Test and build (Node ${{ matrix.node }})
@@ -46,7 +48,7 @@ jobs:
       - run: npm run build
 
   compat:
-    name: Compatibility gate (upstream v0.2.1)
+    name: Compatibility gate + platform integration
     runs-on: ubuntu-latest
     services:
       greenmail:

@@ -5,7 +5,13 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { legacySession, startServer, type RunningServer } from "./harness.js";
+import {
+  legacySession,
+  MODERN_VERSION,
+  modernSession,
+  startServer,
+  type RunningServer,
+} from "./harness.js";
 import { listTools, runScenario, type ScenarioResult } from "./scenario.js";
 import {
   compareOutputs,
@@ -27,6 +33,7 @@ const report = (vs: Violation[]) =>
 describe("compatibility gate", () => {
   let server: RunningServer;
   let current: ScenarioResult;
+  let modern: ScenarioResult;
 
   beforeAll(async () => {
     if (!existsSync(path.join(root, "dist/index.js"))) throw new Error("run `npm run build` first");
@@ -41,7 +48,12 @@ describe("compatibility gate", () => {
         aborted: String(err),
       };
     }
-  }, 60_000);
+    modern = await runScenario(modernSession(server)).catch((err) => ({
+      tools: [],
+      outputs: [],
+      aborted: String(err),
+    }));
+  }, 90_000);
 
   afterAll(async () => {
     await server?.stop();
@@ -72,6 +84,27 @@ describe("compatibility gate", () => {
     });
   }
 
+  it("answers legacy clients with plain JSON, like v0.2.x (no SSE)", async () => {
+    for (const method of ["initialize", "tools/list"]) {
+      const res = await server.raw(
+        {
+          jsonrpc: "2.0",
+          id: 1,
+          method,
+          params: {
+            protocolVersion: "2025-06-18",
+            capabilities: {},
+            clientInfo: { name: "x", version: "1" },
+          },
+        },
+        { "mcp-protocol-version": "2025-06-18" },
+      );
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("application/json");
+      expect(res.headers.get("mcp-session-id")).toBeNull();
+    }
+  });
+
   it("rejects requests without the bearer token", async () => {
     const res = await fetch(`${server.url}/mcp`, {
       method: "POST",
@@ -101,14 +134,61 @@ describe("compatibility gate", () => {
     }
   });
 
-  // 2026-07-28 (stateless, per-request _meta, server/discover) lands with the
-  // SDK v2 migration in Phase 3; these are tracked here so they cannot be forgotten.
-  it.todo("serves a 2026-07-28 client: server/discover advertises supported versions");
-  it.todo(
-    "serves a 2026-07-28 client: stateless tools/call with _meta envelope and Mcp-Method/Mcp-Name headers",
-  );
-  it.todo("rejects 2026-07-28 header/body mismatch with HTTP 400 and -32020");
-  it.todo(
-    "rejects an unsupported protocol version with HTTP 400 and -32022 listing supported versions",
-  );
+  // 2026-07-28 clients: stateless, no initialize, per-request _meta.
+  describe(`${MODERN_VERSION} clients`, () => {
+    for (const ref of BASELINES) {
+      it(`see the same compatible tools and outputs as ${ref}`, () => {
+        expect(modern.aborted, "modern scenario aborted").toBeUndefined();
+        const tools = compareToolLists(load<Tool[]>(ref, "tools-list.json"), modern.tools);
+        expect(tools, report(tools)).toEqual([]);
+        const outputs = compareOutputs(load<OutputRecord[]>(ref, "outputs.json"), modern.outputs);
+        expect(outputs, report(outputs)).toEqual([]);
+      });
+    }
+
+    it("server/discover advertises supported versions, tools and server info", async () => {
+      const res = await modernSession(server)("server/discover");
+      expect(res.status).toBe(200);
+      const r = res.body.result;
+      expect(r.supportedVersions).toContain(MODERN_VERSION);
+      expect(r.capabilities.tools).toBeDefined();
+      expect(r.resultType).toBe("complete");
+    });
+
+    it("tools/call works without a handshake", async () => {
+      const res = await modernSession(server)("tools/call", {
+        name: "list_accounts",
+        arguments: {},
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.result.resultType).toBe("complete");
+      expect(res.body.result.isError ?? false).toBe(false);
+    });
+
+    it("rejects a header/body mismatch with HTTP 400 and -32020", async () => {
+      const res = await modernSession(server)(
+        "tools/call",
+        { name: "list_accounts", arguments: {} },
+        { "mcp-name": "list_folders" },
+      );
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe(-32020);
+    });
+
+    it("rejects an unsupported protocol version with HTTP 400 and -32022", async () => {
+      const res = await server.rpc(
+        "tools/list",
+        {
+          _meta: {
+            "io.modelcontextprotocol/protocolVersion": "1900-01-01",
+            "io.modelcontextprotocol/clientCapabilities": {},
+          },
+        },
+        { protocolVersion: "1900-01-01", headers: { "mcp-method": "tools/list" } },
+      );
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe(-32022);
+      expect(res.body.error.data.supported).toContain(MODERN_VERSION);
+    });
+  });
 });

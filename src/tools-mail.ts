@@ -9,10 +9,11 @@
  * description so Claude.ai surfaces a confirmation step in the UI.
  */
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import { ClientPool } from "./client-pool.js";
-import { AccountsStore } from "./accounts.js";
+import { positiveInt } from "./schemas.js";
+import { PoolLike } from "./client-pool.js";
+import { AccountSource } from "./accounts.js";
 
 function asJson(value: unknown): { content: { type: "text"; text: string }[] } {
   return {
@@ -32,13 +33,13 @@ const accountSchema = z
   .optional()
   .describe("Account ID (from list_accounts) to act on. Omit to use the default account.");
 
-export function registerMailTools(server: McpServer, pool: ClientPool, store: AccountsStore): void {
+export function registerMailTools(server: McpServer, pool: PoolLike, store: AccountSource): void {
   server.registerTool(
     "list_accounts",
     {
       description:
         "List all configured mailbox accounts on this connector. Returns id, label, default flag, From-address and CalDAV-enabled flag — never credentials. Use the `id` value as the `account` parameter on other tools.",
-      inputSchema: {},
+      inputSchema: z.object({}),
     },
     async () => {
       const summaries = store.publicSummaries();
@@ -58,9 +59,9 @@ export function registerMailTools(server: McpServer, pool: ClientPool, store: Ac
     {
       description:
         "List all IMAP mailboxes (folders) on the configured account. Returns path, name, flags and special-use attribute (e.g. \\Sent, \\Drafts, \\Trash) — useful for picking the right `mailbox` parameter for other tools.",
-      inputSchema: {
+      inputSchema: z.object({
         account: accountSchema,
-      },
+      }),
     },
     async ({ account }) => {
       const { imap } = pool.for(account);
@@ -73,7 +74,7 @@ export function registerMailTools(server: McpServer, pool: ClientPool, store: Ac
     {
       description:
         "List the newest messages in a mailbox (newest first). Returns headers + a short preview, NOT the full body — use get_message for the body.",
-      inputSchema: {
+      inputSchema: z.object({
         mailbox: z.string().describe("IMAP folder path (e.g. 'INBOX', 'Sent', 'Archive/2026')"),
         limit: z
           .number()
@@ -84,7 +85,7 @@ export function registerMailTools(server: McpServer, pool: ClientPool, store: Ac
           .describe("Max messages to return (default 25)"),
         unread_only: z.boolean().optional().describe("Return only unread messages"),
         account: accountSchema,
-      },
+      }),
     },
     async ({ mailbox, limit, unread_only, account }) => {
       const { imap } = pool.for(account);
@@ -106,7 +107,7 @@ export function registerMailTools(server: McpServer, pool: ClientPool, store: Ac
     {
       description:
         "Server-side IMAP SEARCH across one mailbox. Combine any criteria (AND-style). Dates must be ISO YYYY-MM-DD. Returns headers + short preview — use get_message for the body.",
-      inputSchema: {
+      inputSchema: z.object({
         mailbox: z.string().describe("IMAP folder path to search in"),
         from: z.string().optional().describe("Substring match in From: header"),
         to: z.string().optional().describe("Substring match in To: header"),
@@ -126,7 +127,7 @@ export function registerMailTools(server: McpServer, pool: ClientPool, store: Ac
         flagged: z.boolean().optional().describe("true = flagged only, false = unflagged only"),
         limit: z.number().int().min(1).max(200).optional(),
         account: accountSchema,
-      },
+      }),
     },
     async ({ mailbox, limit, account, ...criteria }) => {
       const { imap } = pool.for(account);
@@ -145,15 +146,11 @@ export function registerMailTools(server: McpServer, pool: ClientPool, store: Ac
     {
       description:
         "Fetch one message by UID. Returns headers, full text+HTML body, attachment metadata (filenames + content types, NOT raw bytes), and threading IDs (Message-ID, In-Reply-To, References) for replies.",
-      inputSchema: {
+      inputSchema: z.object({
         mailbox: z.string().describe("IMAP folder the message lives in"),
-        uid: z
-          .number()
-          .int()
-          .positive()
-          .describe("Message UID as returned by list_messages/search_messages"),
+        uid: positiveInt().describe("Message UID as returned by list_messages/search_messages"),
         account: accountSchema,
-      },
+      }),
     },
     async ({ mailbox, uid, account }) => {
       const { imap } = pool.for(account);
@@ -166,7 +163,7 @@ export function registerMailTools(server: McpServer, pool: ClientPool, store: Ac
     {
       description:
         "Send an email via SMTP. WRITE OPERATION — the message goes out immediately. Use create_draft instead if you want to review before sending. Saves a copy in the Sent folder if configured. For replies, pass in_reply_to + references from the original get_message result.",
-      inputSchema: {
+      inputSchema: z.object({
         to: recipientSchema.describe("Recipient(s). String or array of email addresses."),
         subject: z.string().min(1).describe("Subject line"),
         text: z.string().optional().describe("Plain-text body"),
@@ -189,7 +186,7 @@ export function registerMailTools(server: McpServer, pool: ClientPool, store: Ac
           )
           .optional(),
         account: accountSchema,
-      },
+      }),
     },
     async (args) => {
       if (!args.text && !args.html) {
@@ -247,7 +244,7 @@ export function registerMailTools(server: McpServer, pool: ClientPool, store: Ac
     {
       description:
         "Build an RFC-822 message and APPEND it to the Drafts folder. Does NOT send. Use for compose-and-review flows where the user wants to edit in their mail client before sending.",
-      inputSchema: {
+      inputSchema: z.object({
         to: recipientSchema,
         subject: z.string().min(1),
         text: z.string().optional(),
@@ -257,7 +254,7 @@ export function registerMailTools(server: McpServer, pool: ClientPool, store: Ac
         in_reply_to: z.string().optional(),
         references: z.array(z.string()).optional(),
         account: accountSchema,
-      },
+      }),
     },
     async (args) => {
       if (!args.text && !args.html) {
@@ -288,12 +285,12 @@ export function registerMailTools(server: McpServer, pool: ClientPool, store: Ac
     {
       description:
         "Set or clear the \\Seen flag on a message. WRITE OPERATION but easily reversible.",
-      inputSchema: {
+      inputSchema: z.object({
         mailbox: z.string(),
-        uid: z.number().int().positive(),
+        uid: positiveInt(),
         read: z.boolean().describe("true = mark as read, false = mark unread"),
         account: accountSchema,
-      },
+      }),
     },
     async ({ mailbox, uid, read, account }) => {
       const { imap } = pool.for(account);
@@ -307,12 +304,12 @@ export function registerMailTools(server: McpServer, pool: ClientPool, store: Ac
     {
       description:
         "Move a message from one mailbox to another (e.g. Inbox → Archive). WRITE OPERATION.",
-      inputSchema: {
+      inputSchema: z.object({
         source_mailbox: z.string(),
-        uid: z.number().int().positive(),
+        uid: positiveInt(),
         destination_mailbox: z.string(),
         account: accountSchema,
-      },
+      }),
     },
     async ({ source_mailbox, uid, destination_mailbox, account }) => {
       const { imap } = pool.for(account);
@@ -331,11 +328,11 @@ export function registerMailTools(server: McpServer, pool: ClientPool, store: Ac
     {
       description:
         "Delete a message. DESTRUCTIVE — most IMAP servers move it to Trash but some EXPUNGE immediately. Prefer move_message to a Trash folder for reversibility.",
-      inputSchema: {
+      inputSchema: z.object({
         mailbox: z.string(),
-        uid: z.number().int().positive(),
+        uid: positiveInt(),
         account: accountSchema,
-      },
+      }),
     },
     async ({ mailbox, uid, account }) => {
       const { imap } = pool.for(account);

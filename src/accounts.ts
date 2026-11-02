@@ -101,14 +101,87 @@ export class NoSuchAccountError extends Error {
   }
 }
 
-export class AccountsStore {
+export type PublicAccountSummary = {
+  id: string;
+  label: string;
+  default: boolean;
+  smtp_from: string;
+  imap_host: string;
+  caldav_enabled: boolean;
+};
+
+/**
+ * Anything tools can resolve accounts from: accounts.json (AccountsStore) in
+ * single-tenant mode, or a tenant's mailboxes (StaticAccounts) in
+ * multi-tenant mode.
+ */
+export interface AccountSource {
+  list(): Account[];
+  ids(): string[];
+  resolve(accountId?: string): Account;
+  publicSummaries(): PublicAccountSummary[];
+}
+
+/** An immutable set of accounts with the same lookup rules as accounts.json. */
+export class StaticAccounts implements AccountSource {
+  private readonly byId: Map<string, Account>;
+
+  constructor(private readonly accounts: Account[]) {
+    this.byId = new Map(accounts.map((a) => [a.id, a]));
+  }
+
+  list(): Account[] {
+    return this.accounts;
+  }
+
+  ids(): string[] {
+    return this.accounts.map((a) => a.id);
+  }
+
+  /**
+   * Resolve an account ID to a full Account. If no ID is given, returns the
+   * `default: true` account, or the first one if none is marked default.
+   * Throws NoSuchAccountError if the ID is unknown or the set is empty.
+   */
+  resolve(accountId?: string): Account {
+    if (accountId) {
+      const acc = this.byId.get(accountId);
+      if (!acc) throw new NoSuchAccountError(accountId, this.ids());
+      return acc;
+    }
+    const def = this.accounts.find((a) => a.default) ?? this.accounts[0];
+    if (!def) throw new NoSuchAccountError("(default)", []);
+    return def;
+  }
+
+  /** Summaries for the list_accounts tool — never include credentials. */
+  publicSummaries(): PublicAccountSummary[] {
+    return this.accounts.map((a) => ({
+      id: a.id,
+      label: a.label,
+      default: Boolean(a.default),
+      smtp_from: a.mail.defaultFrom,
+      imap_host: a.imap.host,
+      caldav_enabled: Boolean(a.caldav?.url),
+    }));
+  }
+}
+
+export class AccountsStore implements AccountSource {
   private accounts: Account[] = [];
-  private byId: Map<string, Account> = new Map();
+  private set: StaticAccounts = new StaticAccounts([]);
   private watcher: FSWatcher | null = null;
   private readonly filePath: string;
   private onChange?: (next: Account[], prev: Account[]) => void;
 
-  constructor(filePath: string) {
+  /**
+   * @param decrypt Optional transform for password fields (SECRETS_ENCRYPTION=local).
+   *   Without it, every value is used literally, as in v0.2.x.
+   */
+  constructor(
+    filePath: string,
+    private readonly decrypt?: (doc: unknown) => void,
+  ) {
     this.filePath = filePath;
   }
 
@@ -148,7 +221,7 @@ export class AccountsStore {
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {
         this.accounts = [];
-        this.byId = new Map();
+        this.set = new StaticAccounts([]);
         if (this.onChange && prev.length > 0) {
           this.onChange(this.accounts, prev);
         }
@@ -157,9 +230,9 @@ export class AccountsStore {
       throw err;
     }
 
-    const parsed = parseAccountsFile(raw);
+    const parsed = parseAccountsFile(raw, this.decrypt);
     this.accounts = parsed.accounts;
-    this.byId = new Map(parsed.accounts.map((a) => [a.id, a]));
+    this.set = new StaticAccounts(parsed.accounts);
     if (this.onChange) {
       this.onChange(this.accounts, prev);
     }
@@ -167,50 +240,22 @@ export class AccountsStore {
 
   /** All currently-loaded accounts. */
   list(): Account[] {
-    return this.accounts;
+    return this.set.list();
   }
 
   /** Just the IDs — handy for error messages. */
   ids(): string[] {
-    return this.accounts.map((a) => a.id);
+    return this.set.ids();
   }
 
-  /**
-   * Resolve an account ID to a full Account. If no ID is given, returns the
-   * `default: true` account, or the first one if none is marked default.
-   * Throws NoSuchAccountError if the ID is unknown or the store is empty.
-   */
+  /** See StaticAccounts.resolve. */
   resolve(accountId?: string): Account {
-    if (accountId) {
-      const acc = this.byId.get(accountId);
-      if (!acc) throw new NoSuchAccountError(accountId, this.ids());
-      return acc;
-    }
-    const def = this.accounts.find((a) => a.default) ?? this.accounts[0];
-    if (!def) throw new NoSuchAccountError("(default)", []);
-    return def;
+    return this.set.resolve(accountId);
   }
 
-  /**
-   * Public summaries for the list_accounts MCP tool — never include
-   * credentials in the response.
-   */
-  publicSummaries(): Array<{
-    id: string;
-    label: string;
-    default: boolean;
-    smtp_from: string;
-    imap_host: string;
-    caldav_enabled: boolean;
-  }> {
-    return this.accounts.map((a) => ({
-      id: a.id,
-      label: a.label,
-      default: Boolean(a.default),
-      smtp_from: a.mail.defaultFrom,
-      imap_host: a.imap.host,
-      caldav_enabled: Boolean(a.caldav?.url),
-    }));
+  /** Public summaries for the list_accounts MCP tool — never credentials. */
+  publicSummaries(): PublicAccountSummary[] {
+    return this.set.publicSummaries();
   }
 
   private watchFile(): void {
@@ -253,7 +298,7 @@ export class AccountsStore {
   }
 }
 
-function parseAccountsFile(raw: string): AccountsFile {
+function parseAccountsFile(raw: string, decrypt?: (doc: unknown) => void): AccountsFile {
   let json: unknown;
   try {
     json = JSON.parse(raw);
@@ -272,6 +317,16 @@ function parseAccountsFile(raw: string): AccountsFile {
   if (!Array.isArray(obj.accounts)) {
     throw new AccountsStoreError("accounts.json must have an `accounts` array");
   }
+  if (decrypt) {
+    try {
+      decrypt(obj);
+    } catch (err) {
+      // Never include values: they are (or decrypt to) passwords.
+      throw new AccountsStoreError(
+        `accounts.json: could not decrypt a password field (${err instanceof Error ? err.name : "error"}). Check SECRETS_KEY_FILE.`,
+      );
+    }
+  }
   const accounts: Account[] = obj.accounts.map((a, i) => parseAccount(a, i));
   const ids = new Set<string>();
   for (const a of accounts) {
@@ -283,7 +338,7 @@ function parseAccountsFile(raw: string): AccountsFile {
   return { version: 1, accounts };
 }
 
-function parseAccount(raw: unknown, index: number): Account {
+export function parseAccount(raw: unknown, index: number): Account {
   if (!raw || typeof raw !== "object") {
     throw new AccountsStoreError(`accounts[${index}] must be an object`);
   }

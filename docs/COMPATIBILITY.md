@@ -28,8 +28,11 @@ throwaway [GreenMail](https://greenmail-mail-test.github.io/greenmail/) IMAP/SMT
 2. Replays a fixed scenario of tool calls (all 14 tools, both accounts, error paths) and
    compares the JSON shape of every output with `compat/baseline/<ref>/outputs.json`. It fails
    if a field disappears or changes type, or if a call starts or stops erroring.
-3. Runs `initialize` → `tools/list` → `tools/call` for every legacy protocol revision, checks
-   Bearer auth, and checks overlapping concurrent requests.
+3. Replays the same scenario as a 2026-07-28 client (no handshake, per-request `_meta`) against
+   the same baseline, and checks `server/discover`, header validation (`-32020`) and version
+   negotiation (`-32022`).
+4. Runs `initialize` → `tools/list` → `tools/call` for every legacy protocol revision, checks
+   that legacy responses are plain JSON, Bearer auth, and overlapping concurrent requests.
 
 Unit tests (`npm test`) also load the golden v0.2.1 `accounts.json` and `.env` files in
 `compat/fixtures/upstream-v0.2.1/`, and pin the OAuth shim formats in
