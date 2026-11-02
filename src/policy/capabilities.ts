@@ -37,6 +37,9 @@ export const TOOL_CAPABILITY: Record<string, Capability> = {
   list_threads: "read",
   set_flags: "organize",
   update_account_settings: "settings",
+  // ChatGPT deep research / company knowledge adapters (CHATGPT_COMPAT=true).
+  search: "read",
+  fetch: "read",
 };
 
 export const PRESETS: Record<Preset, Capability[]> = {

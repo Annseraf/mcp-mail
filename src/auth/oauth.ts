@@ -26,6 +26,8 @@ const MAX_CLIENTS = 50;
 export const DEFAULT_REDIRECT_URIS = [
   "https://claude.ai/api/mcp/auth_callback",
   "https://claude.com/api/mcp/auth_callback",
+  // ChatGPT's stable callback (used because we implement RFC 9207 issuer identification).
+  "https://chatgpt.com/connector_platform_oauth_redirect",
 ];
 
 export interface OAuthOptions {

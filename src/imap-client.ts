@@ -325,6 +325,23 @@ export class ImapClient {
     }
   }
 
+  /** Newest-first summaries whose subject, sender or body contains `q`. */
+  async searchAny(mailbox: string, q: string, limit = 20): Promise<MessageSummary[]> {
+    const client = await this.ensureConnected();
+    const lock = await client.getMailboxLock(mailbox);
+    try {
+      const found = await client.search(
+        { or: [{ subject: q }, { from: q }, { body: q }] },
+        { uid: true },
+      );
+      const uids = Array.isArray(found) ? found : [];
+      if (!uids.length) return [];
+      return (await this.fetchRange(client, uids.slice(-limit).join(","), true)).reverse();
+    } finally {
+      lock.release();
+    }
+  }
+
   /** UIDs in a mailbox whose subject contains a string. */
   async searchSubject(mailbox: string, subject: string): Promise<number[]> {
     const client = await this.ensureConnected();
