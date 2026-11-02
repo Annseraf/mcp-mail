@@ -119,5 +119,6 @@ the container image digest, so anyone can match a running deployment to a public
 
 ## Not yet in platform mode
 
-OAuth 2.1 for tenant endpoints (static bearer tokens today) and `clients.json` policies for
-single-tenant mode land with the client-identity work in the next release.
+Tenant endpoints use per-client static bearer tokens. OAuth for tenant endpoints (for clients
+that can only sign in through a browser) is planned; single-tenant OAuth and `clients.json`
+policies are described in [CLIENTS.md](CLIENTS.md).

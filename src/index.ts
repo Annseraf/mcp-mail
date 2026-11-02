@@ -17,6 +17,7 @@ import { runCli } from "./cli.js";
 import { ClientPool } from "./client-pool.js";
 import { createEngine, listen, type Log } from "./engine.js";
 import { loadPlatformSettings } from "./platform/settings.js";
+import { loadAuthSettings } from "./auth/settings.js";
 import { decryptValue, isEncrypted, loadKey, mapPasswords } from "./platform/local-secrets.js";
 import { buildInfo } from "./version.js";
 
@@ -67,7 +68,9 @@ async function main(): Promise<void> {
   const engine = await createEngine({
     version: VERSION,
     authToken: config.authToken,
+    publicUrl: config.publicUrl,
     accountsFile: config.accountsFile,
+    auth: loadAuthSettings(process.env, config.accountsFile),
     store,
     pool,
     platform,
@@ -101,7 +104,7 @@ async function main(): Promise<void> {
   process.on("SIGINT", () => void shutdown("SIGINT"));
 }
 
-const cli = process.argv[2] === "secrets";
+const cli = ["secrets", "clients", "audit"].includes(process.argv[2] ?? "");
 (cli ? runCli(process.argv.slice(2)).then((code) => process.exit(code)) : main()).catch((err) => {
   console.error("Fatal startup error:", err);
   process.exit(1);
