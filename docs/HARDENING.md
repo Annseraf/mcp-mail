@@ -33,27 +33,27 @@ When you follow [DEPLOYMENT.md](DEPLOYMENT.md), you end up with:
 
 ### Properties this gives you
 
-| Layer | Property | Mechanism |
-|-------|----------|-----------|
-| Transport | TLS 1.3, auto-renewed | certbot + Let's Encrypt |
-| Transport | HSTS 2 years, frame-deny, nosniff, no-referrer, noindex | nginx `add_header … always` |
-| Transport | Brute-force throttling on auth endpoints | nginx `limit_req zone=…auth rate=10r/m burst=5 nodelay` |
-| Network | Backend never reachable from the public internet | bind 127.0.0.1 + UFW default-deny + systemd `IPAddressAllow` |
-| Process | No privilege escalation | `NoNewPrivileges` |
-| Process | Read-only filesystem except `/var/lib/mail-mcp` | `ProtectSystem=strict` + `ReadWritePaths=` |
-| Process | No access to other users' home dirs | `ProtectHome=true` |
-| Process | Cannot tamper with kernel state | `ProtectKernel*`, `ProtectControlGroups`, `ProtectClock` |
-| Process | Cannot inspect other processes | `ProtectProc=invisible` |
-| Process | Cannot make pages executable | `LockPersonality` |
-| Process | Limited syscall surface | `SystemCallFilter=@system-service ~@privileged @resources` |
-| Process | Resource caps | `MemoryMax=512M`, `TasksMax=128`, `LimitNOFILE=4096` |
-| Auth | OAuth 2.1 + DCR + PKCE | the shim |
-| Auth | JWT RS256, 1h access / 30d refresh | the shim |
-| Auth | CSRF guard on state-changing endpoints | Origin/Referer check |
-| Auth | Subprocess injection prevented | `execFile` + regex-gated username |
-| Storage | Credentials chmod 600, owned by service user | install script |
+| Layer     | Property                                                | Mechanism                                                    |
+| --------- | ------------------------------------------------------- | ------------------------------------------------------------ |
+| Transport | TLS 1.3, auto-renewed                                   | certbot + Let's Encrypt                                      |
+| Transport | HSTS 2 years, frame-deny, nosniff, no-referrer, noindex | nginx `add_header … always`                                  |
+| Transport | Brute-force throttling on auth endpoints                | nginx `limit_req zone=…auth rate=10r/m burst=5 nodelay`      |
+| Network   | Backend never reachable from the public internet        | bind 127.0.0.1 + UFW default-deny + systemd `IPAddressAllow` |
+| Process   | No privilege escalation                                 | `NoNewPrivileges`                                            |
+| Process   | Read-only filesystem except `/var/lib/mail-mcp`         | `ProtectSystem=strict` + `ReadWritePaths=`                   |
+| Process   | No access to other users' home dirs                     | `ProtectHome=true`                                           |
+| Process   | Cannot tamper with kernel state                         | `ProtectKernel*`, `ProtectControlGroups`, `ProtectClock`     |
+| Process   | Cannot inspect other processes                          | `ProtectProc=invisible`                                      |
+| Process   | Cannot make pages executable                            | `LockPersonality`                                            |
+| Process   | Limited syscall surface                                 | `SystemCallFilter=@system-service ~@privileged @resources`   |
+| Process   | Resource caps                                           | `MemoryMax=512M`, `TasksMax=128`, `LimitNOFILE=4096`         |
+| Auth      | OAuth 2.1 + DCR + PKCE                                  | the shim                                                     |
+| Auth      | JWT RS256, 1h access / 30d refresh                      | the shim                                                     |
+| Auth      | CSRF guard on state-changing endpoints                  | Origin/Referer check                                         |
+| Auth      | Subprocess injection prevented                          | `execFile` + regex-gated username                            |
+| Storage   | Credentials chmod 600, owned by service user            | install script                                               |
 
-## What it does *not* give you
+## What it does _not_ give you
 
 These are deliberate scope decisions. If your threat model demands more, address them yourself.
 
@@ -62,6 +62,7 @@ These are deliberate scope decisions. If your threat model demands more, address
 The credentials file is plain JSON, chmod 600. An attacker with root on the host can read it. This is the same security boundary as `/etc/shadow` or `~/.ssh/id_rsa`.
 
 Adding app-level encryption would require either:
+
 1. A key stored on the same host (which doesn't protect against a root compromise), or
 2. A key provided at process start (which would have to be entered manually after every restart — operationally painful).
 

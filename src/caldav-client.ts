@@ -9,11 +9,7 @@
  * worse than a small extra request. v0.2 will introduce a short TTL cache.
  */
 
-import {
-  createDAVClient,
-  DAVCalendar,
-  DAVCalendarObject,
-} from "tsdav";
+import { createDAVClient, DAVCalendar, DAVCalendarObject } from "tsdav";
 import ICAL from "ical.js";
 import { randomUUID } from "node:crypto";
 
@@ -108,16 +104,14 @@ export class CalDavClient {
       description: (cal as { description?: string }).description ?? null,
       ctag: cal.ctag ?? null,
       timezone: typeof cal.timezone === "string" ? cal.timezone : null,
-      components: Array.isArray(cal.components)
-        ? cal.components.map(String)
-        : [],
+      components: Array.isArray(cal.components) ? cal.components.map(String) : [],
     }));
   }
 
   async listEvents(
     calendarUrl: string,
     rangeStart: string,
-    rangeEnd: string
+    rangeEnd: string,
   ): Promise<CalendarEvent[]> {
     const calendar = await this.findCalendar(calendarUrl);
     const client = await this.ensureClient();
@@ -159,7 +153,7 @@ export class CalDavClient {
     rangeStart: string,
     rangeEnd: string,
     durationMinutes: number,
-    workingHours?: { startHour: number; endHour: number }
+    workingHours?: { startHour: number; endHour: number },
   ): Promise<FreeSlot[]> {
     const busy: Array<{ start: number; end: number }> = [];
     for (const url of calendarUrls) {
@@ -197,13 +191,13 @@ export class CalDavClient {
         d.getUTCFullYear(),
         d.getUTCMonth(),
         d.getUTCDate(),
-        workingHours.startHour
+        workingHours.startHour,
       );
       const dayEnd = Date.UTC(
         d.getUTCFullYear(),
         d.getUTCMonth(),
         d.getUTCDate(),
-        workingHours.endHour
+        workingHours.endHour,
       );
       const s = Math.max(start, dayStart);
       const e = Math.min(end, dayEnd);
@@ -237,11 +231,11 @@ export class CalDavClient {
 
   private async findCalendar(url: string): Promise<DAVCalendar> {
     const calendars = await (await this.ensureClient()).fetchCalendars();
-    const match = calendars.find((c) => c.url === url || c.url.replace(/\/$/, "") === url.replace(/\/$/, ""));
+    const match = calendars.find(
+      (c) => c.url === url || c.url.replace(/\/$/, "") === url.replace(/\/$/, ""),
+    );
     if (!match) {
-      throw new Error(
-        `Calendar not found: ${url}. Use list_calendars to discover available URLs.`
-      );
+      throw new Error(`Calendar not found: ${url}. Use list_calendars to discover available URLs.`);
     }
     return match;
   }
@@ -269,9 +263,7 @@ function parseICalEvents(icsData: string, objectUrl: string): CalendarEvent[] {
       organizer: organizerProp ? String(organizerProp.getFirstValue()) : null,
       attendees: attendeeProps.map((p) => String(p.getFirstValue())),
       status: (ve.getFirstPropertyValue("status") as string | null) ?? null,
-      recurrenceId: event.recurrenceId
-        ? event.recurrenceId.toJSDate().toISOString()
-        : null,
+      recurrenceId: event.recurrenceId ? event.recurrenceId.toJSDate().toISOString() : null,
     };
   });
 }
@@ -283,24 +275,15 @@ function buildIcs(input: NewEventInput & { uid: string }): string {
 
   const vevent = new ICAL.Component("vevent");
   vevent.updatePropertyWithValue("uid", input.uid);
-  vevent.updatePropertyWithValue(
-    "dtstamp",
-    ICAL.Time.fromJSDate(new Date(), true)
-  );
+  vevent.updatePropertyWithValue("dtstamp", ICAL.Time.fromJSDate(new Date(), true));
   if (input.allDay) {
     const startDate = ICAL.Time.fromDateString(input.start.slice(0, 10));
     const endDate = ICAL.Time.fromDateString(input.end.slice(0, 10));
     vevent.updatePropertyWithValue("dtstart", startDate);
     vevent.updatePropertyWithValue("dtend", endDate);
   } else {
-    vevent.updatePropertyWithValue(
-      "dtstart",
-      ICAL.Time.fromJSDate(new Date(input.start), true)
-    );
-    vevent.updatePropertyWithValue(
-      "dtend",
-      ICAL.Time.fromJSDate(new Date(input.end), true)
-    );
+    vevent.updatePropertyWithValue("dtstart", ICAL.Time.fromJSDate(new Date(input.start), true));
+    vevent.updatePropertyWithValue("dtend", ICAL.Time.fromJSDate(new Date(input.end), true));
   }
   vevent.updatePropertyWithValue("summary", input.summary);
   if (input.description) {

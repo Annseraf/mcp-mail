@@ -75,7 +75,7 @@ export class ClientPool {
       {
         from: account.mail.defaultFrom,
         fromName: account.mail.defaultFromName || undefined,
-      }
+      },
     );
     const caldav = account.caldav
       ? new CalDavClient({

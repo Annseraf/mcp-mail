@@ -1,0 +1,12 @@
+mcp-mail
+Copyright (c) 2026 Mohith K Das and mcp-mail contributors
+
+This project is a maintained continuation of claude-mail-mcp
+(https://github.com/maxx3250/claude-mail-mcp), originally written by
+Markus Stöger and released under the MIT License. The original copyright
+notice is retained in LICENSE, and the upstream history is preserved in
+this repository's git log.
+
+Third-party dependencies are distributed under their own licenses. Notably,
+ical.js is licensed under the Mozilla Public License 2.0 and is used
+unmodified.

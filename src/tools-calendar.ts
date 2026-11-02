@@ -26,31 +26,24 @@ function asJson(value: unknown): { content: { type: "text"; text: string }[] } {
 
 const isoDateTime = z
   .string()
-  .describe(
-    "ISO 8601 datetime with timezone offset, e.g. 2026-05-22T09:00:00+02:00"
-  );
+  .describe("ISO 8601 datetime with timezone offset, e.g. 2026-05-22T09:00:00+02:00");
 
 const accountSchema = z
   .string()
   .optional()
-  .describe(
-    "Account ID (from list_accounts) to act on. Omit to use the default account."
-  );
+  .describe("Account ID (from list_accounts) to act on. Omit to use the default account.");
 
 function requireCaldav(pool: ClientPool, accountId?: string) {
   const clients = pool.for(accountId);
   if (!clients.caldav) {
     throw new Error(
-      `Account "${accountId ?? "(default)"}" has no CalDAV configured. Add a CalDAV URL in the connector's /settings page.`
+      `Account "${accountId ?? "(default)"}" has no CalDAV configured. Add a CalDAV URL in the connector's /settings page.`,
     );
   }
   return clients.caldav;
 }
 
-export function registerCalendarTools(
-  server: McpServer,
-  pool: ClientPool
-): void {
+export function registerCalendarTools(server: McpServer, pool: ClientPool): void {
   server.registerTool(
     "list_calendars",
     {
@@ -63,7 +56,7 @@ export function registerCalendarTools(
     async ({ account }) => {
       const caldav = requireCaldav(pool, account);
       return asJson(await caldav.listCalendars());
-    }
+    },
   );
 
   server.registerTool(
@@ -72,10 +65,7 @@ export function registerCalendarTools(
       description:
         "List events in a calendar between two timestamps. Recurring events are expanded into individual instances.",
       inputSchema: {
-        calendar_url: z
-          .string()
-          .url()
-          .describe("Calendar URL as returned by list_calendars"),
+        calendar_url: z.string().url().describe("Calendar URL as returned by list_calendars"),
         start: isoDateTime.describe("Window start (inclusive)"),
         end: isoDateTime.describe("Window end (exclusive)"),
         account: accountSchema,
@@ -85,7 +75,7 @@ export function registerCalendarTools(
       const caldav = requireCaldav(pool, account);
       const events = await caldav.listEvents(calendar_url, start, end);
       return asJson({ count: events.length, events });
-    }
+    },
   );
 
   server.registerTool(
@@ -94,10 +84,7 @@ export function registerCalendarTools(
       description:
         "Create a new calendar event. WRITE OPERATION. Use all_day=true for date-only events (start/end should then be YYYY-MM-DD; end is exclusive — for a one-day event set end to the day after).",
       inputSchema: {
-        calendar_url: z
-          .string()
-          .url()
-          .describe("Calendar URL as returned by list_calendars"),
+        calendar_url: z.string().url().describe("Calendar URL as returned by list_calendars"),
         summary: z.string().min(1).describe("Event title"),
         start: isoDateTime,
         end: isoDateTime,
@@ -108,7 +95,7 @@ export function registerCalendarTools(
           .array(z.string().email())
           .optional()
           .describe(
-            "Email addresses of attendees. Note: CalDAV does NOT send invitations on its own — most servers expect the client to mail the iMIP invite separately."
+            "Email addresses of attendees. Note: CalDAV does NOT send invitations on its own — most servers expect the client to mail the iMIP invite separately.",
           ),
         account: accountSchema,
       },
@@ -126,7 +113,7 @@ export function registerCalendarTools(
         attendees: args.attendees,
       });
       return asJson({ success: true, ...result });
-    }
+    },
   );
 
   server.registerTool(
@@ -153,9 +140,7 @@ export function registerCalendarTools(
             end_hour: z.number().int().min(1).max(24),
           })
           .optional()
-          .describe(
-            "Restrict slots to this daily UTC window (e.g. 8–18 for 09:00–19:00 in CEST)"
-          ),
+          .describe("Restrict slots to this daily UTC window (e.g. 8–18 for 09:00–19:00 in CEST)"),
         account: accountSchema,
       },
     },
@@ -171,9 +156,9 @@ export function registerCalendarTools(
               startHour: args.working_hours.start_hour,
               endHour: args.working_hours.end_hour,
             }
-          : undefined
+          : undefined,
       );
       return asJson({ count: slots.length, slots });
-    }
+    },
   );
 }
