@@ -117,8 +117,37 @@ passwords and tokens are never logged.
 Public on every deployment: package version, commit SHA, build time and (for CI-built images)
 the container image digest, so anyone can match a running deployment to a public commit.
 
+## OAuth for tenant endpoints (delegated login)
+
+Clients that can only connect through a browser sign-in (Claude.ai, ChatGPT) use OAuth. With
+`TENANT_OAUTH=true` each tenant gets its own issuer at `<TENANT_BASE_URL>/t/<tenant>/`. The
+engine has no user accounts, so the login step is handed to the product:
+
+1. The client discovers OAuth from the 401 challenge on `/t/<tenant>/mcp`, registers (DCR) and
+   opens `/t/<tenant>/authorize`.
+2. The engine redirects the browser to `OAUTH_DELEGATE_URL` with `txn` (signed, 10 minutes),
+   `tenant`, `client_name`, `redirect_host` and `return_to`.
+3. The product signs the user in, checks they own the tenant, picks or creates the agent client
+   (admin API `POST /tenants/<id>/clients`), and redirects to
+   `return_to?txn=<txn>&client=<client id>&sig=<hex HMAC-SHA256(OAUTH_DELEGATE_SECRET, "<txn>.<client id>")>`.
+   To refuse: `error=access_denied&sig=<HMAC of "<txn>.denied">`.
+4. The engine issues tokens bound to that tenant and agent client. Revoking or rotating the
+   client signs the session out.
+
+| Variable                       | Meaning                                                                    |
+| ------------------------------ | -------------------------------------------------------------------------- |
+| `TENANT_OAUTH`                 | `true` to enable (requires `MULTI_TENANT`)                                 |
+| `TENANT_TOKEN_SECRET[_FILE]`   | Master key, 64+ hex characters; each tenant's token key is derived from it |
+| `OAUTH_DELEGATE_URL`           | The product's login/consent page                                           |
+| `OAUTH_DELEGATE_SECRET[_FILE]` | Shared HMAC secret, 32+ characters                                         |
+| `TENANT_ALLOWED_REDIRECT_URIS` | Optional; defaults to Claude.ai's and ChatGPT's callbacks                  |
+
+Discovery follows RFC 8414 and RFC 9728 path insertion
+(`/.well-known/oauth-authorization-server/t/<tenant>`,
+`/.well-known/oauth-protected-resource/t/<tenant>/mcp`) and is also served under
+`/t/<tenant>/.well-known/…`. Each tenant has its own token key, state file and resource URL, so a
+token for one tenant never works on another. Deleting a tenant removes its OAuth state.
+
 ## Not yet in platform mode
 
-Tenant endpoints use per-client static bearer tokens. OAuth for tenant endpoints (for clients
-that can only sign in through a browser) is planned; single-tenant OAuth and `clients.json`
-policies are described in [CLIENTS.md](CLIENTS.md).
+Single-tenant OAuth and `clients.json` policies are described in [CLIENTS.md](CLIENTS.md).

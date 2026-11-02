@@ -43,7 +43,7 @@ function annotateTools(server: McpServer): void {
   };
 }
 
-export const SERVER_NAME = "claude-mail-mcp";
+export const SERVER_NAME = "mcp-mail";
 
 export function buildMcpServer(
   version: string,

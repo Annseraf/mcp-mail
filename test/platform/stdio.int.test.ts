@@ -52,7 +52,7 @@ describe("stdio transport", () => {
       capabilities: {},
       clientInfo: { name: "stdio-test", version: "1" },
     });
-    expect(init.result.serverInfo.name).toBe("claude-mail-mcp");
+    expect(init.result.serverInfo.name).toBe("mcp-mail");
     child.stdin.write(
       JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n",
     );

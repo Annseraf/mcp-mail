@@ -1,0 +1,943 @@
+# mcp-mail — full documentation
+
+<!-- README.md -->
+
+# mcp-mail
+
+**mcp-mail is a self-hosted IMAP/SMTP email MCP server that lets Claude, ChatGPT, Cursor and any other MCP client read, search, draft and send email from your existing mailbox, with per-client permissions, an audit log and a one-line install.**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Annseraf/mcp-mail/main/install.sh | sudo bash -s -- --auto-update
+```
+
+Local clients (Claude Desktop, Claude Code, Cursor, VS Code) can run it directly: `npx -y mcp-mail stdio`.
+
+mcp-mail is a maintained continuation of [claude-mail-mcp](https://github.com/maxx3250/claude-mail-mcp) by Markus Stöger (MIT). Existing claude-mail-mcp v0.2 installs can switch with **no config changes** ([compatibility contract](docs/COMPATIBILITY.md)).
+
+## Works with
+
+- **AI clients:** Claude.ai, Claude Desktop, Claude Code, ChatGPT (developer mode, deep research), Cursor, VS Code, Meta Muse, and any MCP client over Streamable HTTP or stdio. Setup guides: [docs/clients](docs/clients/).
+- **Mail providers:** any IMAP/SMTP mailbox: Fastmail, iCloud, Purelymail, Gmail and Google Workspace (app password), Yahoo, Zoho, Mailbox.org, Migadu, Mailcow, Dovecot/Postfix.
+- **Calendars:** any CalDAV server (Fastmail, iCloud, Nextcloud, Radicale), optional.
+- **MCP protocol:** 2026-07-28 (stateless) and every earlier revision since 2024-11-05, on the same endpoint.
+
+## Tools
+
+| Tool                                              | What it does                                                                               | Capability             |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------- |
+| `list_accounts`                                   | List connected mailboxes, sender names and signatures (never credentials)                  | read                   |
+| `list_folders`                                    | List folders with their special use (Inbox, Sent, Drafts, Trash)                           | read                   |
+| `list_messages`                                   | Newest messages in a folder, with short previews                                           | read                   |
+| `search_messages`                                 | Search one folder, several, or all (`"*"`) by sender, subject, body, date, read or flagged | read                   |
+| `get_message`                                     | Read one message: headers, body, attachment list, threading ids                            | read                   |
+| `get_attachment`                                  | Download one attachment (size-capped)                                                      | read                   |
+| `get_thread`                                      | Read a whole conversation across Inbox and Sent, oldest first                              | read                   |
+| `list_threads`                                    | Group a folder's newest messages into conversations                                        | read                   |
+| `create_draft`                                    | Save a draft (with attachments); `reply_to_uid` fills in the reply for you                 | draft                  |
+| `mark_read`                                       | Mark a message read or unread                                                              | organize               |
+| `set_flags`                                       | Star (flag), mark answered, or add custom keywords                                         | organize               |
+| `move_message`                                    | Move a message to another folder                                                           | organize               |
+| `delete_message`                                  | Move to Trash; `permanent: true` deletes for good                                          | organize / destructive |
+| `send_message`                                    | Send an email (with attachments and signature); a copy goes to Sent                        | send                   |
+| `update_account_settings`                         | Change the sender display name and signature                                               | settings               |
+| `list_calendars`, `list_events`, `find_free_slot` | Read calendars and find free time                                                          | calendar-read          |
+| `create_event`                                    | Create a calendar event                                                                    | calendar-write         |
+| `search`, `fetch`                                 | ChatGPT deep research adapters (`CHATGPT_COMPAT=true`)                                     | read                   |
+
+## Comparison
+
+|                                     | **mcp-mail**                                                                  | claude-mail-mcp v0.2               |
+| ----------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------- |
+| Transport                           | Streamable HTTP (2026-07-28 + legacy) and stdio                               | Streamable HTTP                    |
+| Auth                                | Built-in OAuth 2.1 (DCR, PKCE), per-client tokens, shared token               | Shared token + separate OAuth shim |
+| Per-client permissions              | Presets, tool allow/deny, mailbox scope, recipient allowlist, send rate limit | —                                  |
+| Read-only mode                      | `read-only` preset (or `STDIO_PRESET=read-only`)                              | —                                  |
+| Revoke one client                   | Yes, others keep working                                                      | Rotate the shared secret           |
+| Attachments                         | Send, draft and download                                                      | Send only                          |
+| Threads, flags, multi-folder search | Yes                                                                           | —                                  |
+| Audit log                           | JSONL, no message content                                                     | —                                  |
+| Prompt-injection hygiene            | Untrusted-content fencing, hidden-HTML stripping, server instructions         | —                                  |
+| Multi-tenant + admin API            | Opt-in, with OpenAPI spec                                                     | —                                  |
+| Install and updates                 | One-line installer, signed releases, auto-update with rollback                | Manual                             |
+
+Other IMAP MCP servers worth a look, depending on your needs: [codefuturist/email-mcp](https://github.com/codefuturist/email-mcp) (TypeScript, IMAP/SMTP, many tools), [tecnologicachile/mail-mcp](https://github.com/tecnologicachile/mail-mcp) (Rust, IMAP/SMTP plus Microsoft Graph and EWS) and [wildsurfer/your-mail-mcp](https://github.com/wildsurfer/your-mail-mcp) (read-only, local notmuch index). Check their READMEs for current features.
+
+## FAQ
+
+### How do I give ChatGPT read-only access to my email?
+
+Run `mcp-mail clients add chatgpt --for chatgpt` (OAuth login, `read-only` preset), enable `OAUTH=true`, and add the server in ChatGPT's developer mode. ChatGPT only ever sees the read tools. See [docs/clients/chatgpt.md](docs/clients/chatgpt.md).
+
+### Can I use this with Fastmail, iCloud, Purelymail or Gmail?
+
+Yes. Anything that speaks IMAP and SMTP works. For Gmail, iCloud, Yahoo and Fastmail, create an app password in the provider's security settings and use it instead of your normal password.
+
+### How do I stop an AI agent from sending email?
+
+Give the agent a preset without `send` (`read-only`, `read-draft` or `organize`). The send tool then disappears from its tool list and is rejected if called anyway. For agents that may send, restrict recipients with `sendRecipientAllowlist` and cap volume with `sendRateLimit`. See [docs/CLIENTS.md](docs/CLIENTS.md).
+
+### Can an email trick the AI into doing something?
+
+Emails are untrusted input. mcp-mail wraps every body in untrusted-content delimiters, strips hidden HTML text and tracking pixels, and tells clients to confirm sends and deletions with you. Keep sending off for agents that don't need it. See [SECURITY.md](SECURITY.md).
+
+### Does deleting a message lose it forever?
+
+No. `delete_message` moves the message to Trash. Permanent deletion needs `permanent: true` and a client with the `destructive` capability.
+
+### Where are my passwords stored?
+
+In `accounts.json` on your server (optionally encrypted at rest with `mcp-mail secrets encrypt`). In multi-tenant mode, credentials are envelope-encrypted per tenant with a local key file or OCI Vault. They are never returned by any tool, API or log.
+
+### Can my agent sign emails?
+
+Yes. Each account can have a sender display name and a signature, set in `accounts.json` or by the agent itself with `update_account_settings`. Pass `include_signature: false` to send without it.
+
+### I'm on claude-mail-mcp. Do I need to change anything?
+
+No. Swap the binary; your `.env`, `accounts.json` and connected clients keep working. CI enforces this against recorded v0.2.1 behavior.
+
+## Security model
+
+- Binds to `127.0.0.1` by default; put nginx or Caddy in front for TLS.
+- Clients authenticate with OAuth 2.1 (PKCE, rotating refresh tokens), per-client static tokens (stored hashed), or the legacy shared token.
+- Every tool call is checked against the client's policy twice: when listing tools and when calling them.
+- The audit log records who did what, never message content.
+- Mail content is fenced as untrusted; sends and deletions should be confirmed by a human.
+- Releases are built by CI from tagged commits only, with checksums and provenance attestation.
+
+Details: [SECURITY.md](SECURITY.md), [docs/CLIENTS.md](docs/CLIENTS.md), [docs/PLATFORM.md](docs/PLATFORM.md).
+
+## Configuration
+
+- `.env`: transport settings ([.env.example](.env.example)). Everything new is optional.
+- `accounts.json`: mailboxes (same format as claude-mail-mcp; optional `fromName`/`signature`).
+- `clients.json`: per-client identities and policies ([docs/CLIENTS.md](docs/CLIENTS.md)).
+- Multi-tenant mode and the admin API: [docs/PLATFORM.md](docs/PLATFORM.md).
+
+## Upgrading
+
+From claude-mail-mcp v0.2.x: **no config changes required.** Install mcp-mail pointing at the same `.env`, `accounts.json` and (if you use one) OAuth state. New features stay off until you enable them. Two approved behavior changes are listed in [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md#intentional-deviations): deleting moves to Trash, and email content is fenced as untrusted (`UNTRUSTED_FENCING=false` restores the old output).
+
+## Development
+
+```sh
+npm ci
+npm run check        # lint, format, typecheck, unit tests, license scan, build
+npm run test:compat  # compatibility gate + integration suites (needs GreenMail, see docs/COMPATIBILITY.md)
+```
+
+Adding a tool: [docs/ADDING_A_TOOL.md](docs/ADDING_A_TOOL.md). Contributions: [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+MIT. Copyright (c) 2026 Markus Stöger and (c) 2026 Mohith K Das and mcp-mail contributors. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+---
+
+<!-- docs/clients/README.md -->
+
+# Client setup guides
+
+| Client                       | Transport                    | Auth         | Guide                                            |
+| ---------------------------- | ---------------------------- | ------------ | ------------------------------------------------ |
+| Claude.ai (web, mobile)      | Remote HTTP                  | OAuth login  | [claude-ai.md](claude-ai.md)                     |
+| Claude Desktop / Claude Code | stdio (local) or remote HTTP | none / token | [claude-desktop-code.md](claude-desktop-code.md) |
+| ChatGPT                      | Remote HTTP                  | OAuth login  | [chatgpt.md](chatgpt.md)                         |
+| Cursor                       | stdio or remote HTTP         | none / token | [cursor.md](cursor.md)                           |
+| VS Code (Copilot agent mode) | stdio or remote HTTP         | none / token | [vscode.md](vscode.md)                           |
+| Meta Muse                    | Remote HTTP                  | token        | [muse.md](muse.md)                               |
+| Anything else                | Remote HTTP or stdio         | token        | [generic.md](generic.md)                         |
+
+Remote HTTP needs mcp-mail reachable over HTTPS (`https://mail.example.com/mcp` below). Create
+one client per agent with `mcp-mail clients add <id> --for <type>` so each gets its own
+permissions and can be revoked on its own ([CLIENTS.md](../CLIENTS.md)).
+
+---
+
+<!-- docs/clients/claude-ai.md -->
+
+# Claude.ai
+
+Claude.ai connects to remote MCP servers that support OAuth 2.1 with dynamic client registration.
+
+1. On the server, enable OAuth and create a login for Claude:
+   ```sh
+   # .env
+   OAUTH=true
+   TOKEN_SECRET_FILE=/etc/mcp-mail/token-secret   # openssl rand -hex 32 > ...
+   ```
+   ```sh
+   mcp-mail clients add claude --for claude --preset read-draft
+   # prints a username and password once
+   ```
+2. In Claude.ai: **Settings → Connectors → Add custom connector**.
+   - Name: `Email`
+   - URL: `https://mail.example.com/mcp`
+3. Click **Connect**. A sign-in page from your server opens; use the username and password from
+   step 1. Claude returns to the chat with the connector enabled.
+
+To let Claude send mail, use `--preset full-no-delete`, and consider `sendRecipientAllowlist`
+in `clients.json`. Revoke at any time with `mcp-mail clients revoke claude`.
+
+---
+
+<!-- docs/clients/claude-desktop-code.md -->
+
+# Claude Desktop and Claude Code
+
+## Local (stdio), simplest
+
+mcp-mail runs as a child process and reads `~/.config/mcp-mail/accounts.json` (or `ACCOUNTS_FILE`).
+
+Claude Desktop, `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "email": {
+      "command": "npx",
+      "args": ["-y", "mcp-mail", "stdio"],
+      "env": {
+        "ACCOUNTS_FILE": "/Users/you/.config/mcp-mail/accounts.json",
+        "STDIO_PRESET": "read-draft"
+      }
+    }
+  }
+}
+```
+
+Claude Code:
+
+```sh
+claude mcp add email -e STDIO_PRESET=read-draft -- npx -y mcp-mail stdio
+```
+
+`STDIO_PRESET` is optional (`read-only`, `read-draft`, `organize`, `full-no-delete`, `full`).
+
+## Remote (HTTP)
+
+```sh
+mcp-mail clients add claude-code --for generic --preset read-draft   # prints a token once
+claude mcp add --transport http email https://mail.example.com/mcp --header "Authorization: Bearer <token>"
+```
+
+---
+
+<!-- docs/clients/chatgpt.md -->
+
+# ChatGPT
+
+Checked against OpenAI's documentation on 2026-11-02.
+
+ChatGPT connects to remote MCP servers in **developer mode** (Settings → Apps → Advanced) using
+OAuth 2.1 with dynamic client registration and PKCE. mcp-mail implements RFC 9207 issuer
+identification, so ChatGPT uses its stable callback
+`https://chatgpt.com/connector_platform_oauth_redirect`, which is in the default
+`ALLOWED_REDIRECT_URIS`.
+
+1. Server:
+   ```sh
+   # .env
+   OAUTH=true
+   TOKEN_SECRET_FILE=/etc/mcp-mail/token-secret
+   CHATGPT_COMPAT=true        # adds read-only `search` and `fetch` for deep research
+   ```
+   ```sh
+   mcp-mail clients add chatgpt --for chatgpt     # read-only preset, OAuth login printed once
+   ```
+2. In ChatGPT: **Apps → + → Add custom MCP server**, URL `https://mail.example.com/mcp`,
+   authentication **OAuth**. Sign in with the login from step 1.
+3. After changing presets or tools, press **Refresh** on the app so ChatGPT re-reads the tool list.
+
+Notes:
+
+- Deep research and company knowledge only use tools named `search` and `fetch`; mcp-mail's
+  versions search Inbox and Sent of every account and return fenced message text.
+- Read tools carry `readOnlyHint`, so ChatGPT runs them without asking; anything else needs your
+  confirmation in the conversation.
+- Write tools (drafts, sending) depend on your ChatGPT plan's developer-mode support.
+
+---
+
+<!-- docs/clients/cursor.md -->
+
+# Cursor
+
+`~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project):
+
+```json
+{
+  "mcpServers": {
+    "email": {
+      "command": "npx",
+      "args": ["-y", "mcp-mail", "stdio"],
+      "env": { "STDIO_PRESET": "read-draft" }
+    }
+  }
+}
+```
+
+Remote server instead:
+
+```sh
+mcp-mail clients add cursor --for cursor     # token printed once
+```
+
+```json
+{
+  "mcpServers": {
+    "email": {
+      "url": "https://mail.example.com/mcp",
+      "headers": { "Authorization": "Bearer <token>" }
+    }
+  }
+}
+```
+
+---
+
+<!-- docs/clients/vscode.md -->
+
+# VS Code (Copilot agent mode)
+
+`.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "email": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "mcp-mail", "stdio"],
+      "env": { "STDIO_PRESET": "read-draft" }
+    }
+  }
+}
+```
+
+Remote server (`mcp-mail clients add vscode --for vscode` prints a token):
+
+```json
+{
+  "inputs": [
+    { "id": "mailToken", "type": "promptString", "description": "mcp-mail token", "password": true }
+  ],
+  "servers": {
+    "email": {
+      "type": "http",
+      "url": "https://mail.example.com/mcp",
+      "headers": { "Authorization": "Bearer ${input:mailToken}" }
+    }
+  }
+}
+```
+
+---
+
+<!-- docs/clients/muse.md -->
+
+# Meta Muse
+
+Checked 2026-11-02 against public setup guides; Meta's own documentation is still sparse.
+
+Muse has no "add MCP server" setting. You ask it in chat to build a **Custom Connector**; it
+writes an MCP client on its cloud VM, tests it and saves it as a skill. The server must be
+public HTTPS speaking Streamable HTTP (a localhost or stdio server is unreachable from Muse).
+A static bearer token is the smoothest auth.
+
+1. Create a token client:
+   ```sh
+   mcp-mail clients add muse --for muse          # read-draft preset, token printed once
+   ```
+2. In Muse, send:
+   > Build a Custom Connector that acts as an MCP client for my email.
+   > Server URL: https://mail.example.com/mcp
+   > Transport: remote streamable HTTP
+   > Auth: HTTP header `Authorization: Bearer <token>`. I'll paste the token in the secure
+   > credential prompt, not in chat.
+3. Paste the token only into Muse's secure credential prompt.
+
+Muse can then list, search and read mail and save drafts. Grant `send` only if you need it.
+
+---
+
+<!-- docs/clients/generic.md -->
+
+# Any MCP client
+
+**Remote (Streamable HTTP).** `POST https://mail.example.com/mcp` with
+`Authorization: Bearer <token>` (from `mcp-mail clients add <id> --for generic`). Both
+2026-07-28 (stateless, per-request `_meta`) and initialize-based clients work.
+
+```sh
+curl -s https://mail.example.com/mcp \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" -H "MCP-Protocol-Version: 2025-06-18" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+**Local (stdio).** `npx -y mcp-mail stdio`, with `ACCOUNTS_FILE` and optional `STDIO_PRESET`.
+
+Clients that only support OAuth sign-in can use the built-in OAuth server (`OAUTH=true`); see
+[claude-ai.md](claude-ai.md).
+
+---
+
+<!-- docs/CLIENTS.md -->
+
+# Clients, OAuth, policies and audit
+
+Every feature on this page is opt-in. With no `clients.json`, `OAUTH` unset and `AUDIT_LOG`
+unset, mcp-mail behaves exactly like claude-mail-mcp v0.2.x.
+
+## Identities
+
+A request to `/mcp` is identified as one of:
+
+| Credential                           | Client                                                                                                   |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| The shared `AUTH_TOKEN`              | Built-in `legacy` client with full access (override it with a `clients.json` entry whose id is `legacy`) |
+| An OAuth access token (`OAUTH=true`) | Matched to a client by OAuth client id, then by login user; unmatched logins get `defaultPolicy`         |
+| A per-client static token            | Matched by its SHA-256 hash in `clients.json`                                                            |
+
+## clients.json
+
+Next to `accounts.json`, or wherever `CLIENTS_FILE` points. Changes apply without a restart.
+
+```json
+{
+  "version": 1,
+  "defaultPolicy": "read-draft",
+  "clients": [
+    { "id": "claude", "match": { "oauthUser": "claude" }, "preset": "full-no-delete" },
+    {
+      "id": "muse",
+      "match": { "tokenHash": "sha256:…" },
+      "preset": "read-draft",
+      "accounts": ["main"]
+    },
+    {
+      "id": "assistant",
+      "match": { "tokenHash": "sha256:…" },
+      "preset": "full-no-delete",
+      "denyTools": ["create_event"],
+      "sendRecipientAllowlist": ["@example.com", "boss@example.org"],
+      "sendRateLimit": { "perHour": 10 }
+    }
+  ]
+}
+```
+
+Policies grant capabilities, not tool names, so new tools are governed automatically:
+
+| Preset           | Capabilities           | Tools                                                                      |
+| ---------------- | ---------------------- | -------------------------------------------------------------------------- |
+| `read-only`      | read, calendar-read    | list/search/get messages, folders, accounts, calendars, events, free slots |
+| `read-draft`     | + draft                | + `create_draft`                                                           |
+| `organize`       | + organize             | + `mark_read`, `move_message`, `delete_message` (to Trash)                 |
+| `full-no-delete` | + send, calendar-write | + `send_message`, `create_event`                                           |
+| `full`           | + destructive          | + `delete_message` with `permanent: true`                                  |
+
+Enforcement has two layers: tools a client may not use are left out of its `tools/list`, and
+every call is checked again at dispatch. `allowTools` / `denyTools` override the preset.
+
+## Managing clients
+
+```sh
+mcp-mail clients add claude --for claude --preset full-no-delete   # OAuth login, password shown once
+mcp-mail clients add muse --for muse --accounts main               # static token, shown once
+mcp-mail clients list
+mcp-mail clients rotate muse      # new token; the old one stops working at once
+mcp-mail clients revoke muse      # this client only; others keep working
+```
+
+`--for` picks the auth mode and a default preset: `claude` (OAuth, read-draft), `chatgpt`
+(OAuth, read-only), `cursor`, `vscode`, `muse`, `generic` (token, read-draft). Only token hashes
+and scrypt password hashes are stored.
+
+## Built-in OAuth 2.1
+
+`OAUTH=true` serves OAuth discovery, dynamic client registration, `/authorize` with a login page
+(PKCE S256 required), `/token` (rotating refresh tokens), `/revoke`, and protected-resource
+metadata. `/mcp` then answers unauthenticated requests with a `WWW-Authenticate` challenge so
+clients like Claude.ai can discover it.
+
+| Variable                                   | Meaning                                                 |
+| ------------------------------------------ | ------------------------------------------------------- |
+| `TOKEN_SECRET[_FILE]`                      | HMAC key for access tokens, hex, at least 32 characters |
+| `LOGIN_USER`, `LOGIN_PASSWORD_HASH[_FILE]` | Primary login (`scrypt:N:r:p:salt:hash`)                |
+| `OAUTH_USERS_FILE`                         | More logins (written by `clients add --auth oauth`)     |
+| `OAUTH_STATE_FILE` (or `STATE_FILE`)       | Registered clients and hashed refresh tokens            |
+| `ALLOWED_REDIRECT_URIS`                    | Comma-separated; defaults to Claude.ai's callbacks      |
+
+It reads and writes the same token, state and password formats as the reference OAuth shim, so
+an existing shim deployment can point these variables at its current values and connected
+clients keep working without reconnecting (see [COMPATIBILITY.md](COMPATIBILITY.md)).
+
+Revoking a client invalidates its tokens immediately; rotating an OAuth client sets a new
+password and signs out its existing sessions. Neither affects other clients.
+
+## Audit log
+
+`AUDIT_LOG=/var/log/mcp-mail/audit.jsonl` (or `stdout`) writes one JSON line per tool call:
+timestamp, client, tool, account, mailbox, UID, recipient count for sends, result
+(`ok`/`denied`/`error`), denial reason and duration. Bodies, subjects, attachments, passwords and
+tokens are never logged. The file rotates at 5 MB.
+
+```sh
+mcp-mail audit tail --client muse -n 50
+```
+
+## Deleting messages
+
+`delete_message` moves the message to the account's Trash folder (found by its `\Trash`
+special-use flag or a conventional name). `permanent: true` deletes it for good and needs the
+`destructive` capability.
+
+---
+
+<!-- docs/COMPATIBILITY.md -->
+
+# Compatibility contract
+
+Anyone running claude-mail-mcp v0.2.x must be able to swap in mcp-mail with **zero config
+edits**, and connected MCP clients (including Claude.ai custom connectors) must keep working
+**without reconnecting**. This document is the contract, and CI enforces it.
+
+## What must not change
+
+| Surface               | Rule                                                                                                                                                                                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Environment variables | Every v0.2.x variable keeps its name, meaning and default. New variables are optional and default to v0.2.x behavior.                                                                                                                       |
+| `accounts.json`       | `"version": 1` files load forever, from the same default path or `ACCOUNTS_FILE`. New fields are optional. Unknown fields are tolerated. The file is never rewritten unless you run an explicit migration command, which backs it up first. |
+| Tool names            | All 14 v0.2.x tools keep their exact names.                                                                                                                                                                                                 |
+| Tool inputs           | Additive only. New parameters are optional. A parameter is never made required, removed, or narrowed (type, enum, bounds, pattern, format). Relaxing is fine.                                                                               |
+| Tool outputs          | Additive only. No field is renamed, removed or retyped.                                                                                                                                                                                     |
+| HTTP surface          | `POST /mcp` (Bearer `AUTH_TOKEN`) and `GET /health` keep their paths and behavior.                                                                                                                                                          |
+| Protocol              | Clients that use the `initialize` handshake (protocol revisions 2024-11-05 through 2025-11-25) keep working alongside newer revisions.                                                                                                      |
+| OAuth continuity      | Deployments that front the server with the reference OAuth shim keep their registered clients, refresh tokens, access tokens and login (see below).                                                                                         |
+
+## How it is enforced
+
+`npm run test:compat` (CI job "Compatibility gate") builds the server, starts it against a
+throwaway [GreenMail](https://greenmail-mail-test.github.io/greenmail/) IMAP/SMTP server, and:
+
+1. Compares `tools/list` with the recorded baseline in `compat/baseline/<ref>/tools-list.json`.
+   It fails on a removed tool, a newly required parameter, a removed parameter, or any
+   narrowing of a parameter's accepted values.
+2. Replays a fixed scenario of tool calls (all 14 tools, both accounts, error paths) and
+   compares the JSON shape of every output with `compat/baseline/<ref>/outputs.json`. It fails
+   if a field disappears or changes type, or if a call starts or stops erroring.
+3. Replays the same scenario as a 2026-07-28 client (no handshake, per-request `_meta`) against
+   the same baseline, and checks `server/discover`, header validation (`-32020`) and version
+   negotiation (`-32022`).
+4. Runs `initialize` → `tools/list` → `tools/call` for every legacy protocol revision, checks
+   that legacy responses are plain JSON, Bearer auth, and overlapping concurrent requests.
+
+Unit tests (`npm test`) also load the golden v0.2.1 `accounts.json` and `.env` files in
+`compat/fixtures/upstream-v0.2.1/`, and pin the OAuth shim formats in
+`compat/fixtures/oauth-shim-v0.1/`.
+
+### Run it locally
+
+```sh
+docker run -d --name greenmail -p 127.0.0.1:3025:3025 -p 127.0.0.1:3143:3143 \
+  -e GREENMAIL_OPTS='-Dgreenmail.setup.test.smtp -Dgreenmail.setup.test.imap -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.users=alice:alicepw@example.com,bob:bobpw@example.com -Dgreenmail.users.login=email' \
+  greenmail/standalone:2.1.5
+npm run test:compat
+```
+
+Point the harness at another server with `COMPAT_MAIL_HOST`, `COMPAT_IMAP_PORT` and
+`COMPAT_SMTP_PORT`.
+
+### Baselines
+
+Baselines are recorded from a git ref, never from the code under test:
+
+```sh
+npm run compat:baseline -- v0.2.1
+```
+
+This builds the ref in a temporary worktree and replays the same scenario. Re-record only when
+the scenario itself changes (for example to cover a new tool), and review the diff: a baseline
+change that drops or narrows anything is a contract change.
+
+## OAuth shim formats
+
+Existing deployments may run the reference OAuth 2.1 shim in front of `/mcp`. Its state must
+remain valid when mcp-mail's built-in OAuth replaces it:
+
+- **Access tokens:** `base64url(JSON) "." base64url(HMAC-SHA256(first part, TOKEN_SECRET))`,
+  payload `{ typ: "at", cid, scp, aud, exp }`, 1 hour lifetime.
+- **Refresh tokens:** random, stored as the SHA-256 hex of the token in `state.json` under
+  `refresh`, with `{ cid, scp, aud, exp }`; 30 days; rotated on use.
+- **Clients:** RFC 7591 dynamic registrations in `state.json` under `clients`, keyed by `client_id`.
+- **Login:** `LOGIN_USER` plus `LOGIN_PASSWORD_HASH` in the form `scrypt:N:r:p:<salt>:<hash>`
+  (base64url).
+- **Paths:** OAuth discovery metadata, `/register`, `/authorize`, `/token`, `/revoke`, `/login`,
+  and `/.well-known/oauth-protected-resource`.
+
+## Intentional deviations
+
+Approved by the maintainer; the tool schemas and output fields stay compatible.
+
+| Change                                                                                                                                                                                      | Why                                                      | Opt out                   |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ------------------------- |
+| `delete_message` moves the message to Trash; permanent deletion needs `permanent: true` (and the `destructive` capability when a client policy applies)                                     | Reversible by default                                    | Pass `permanent: true`    |
+| Email bodies and previews are wrapped in `<untrusted_email_content>` delimiters, HTML-only mail is converted with hidden text and images removed, and outputs gain a `content_notice` field | Prompt-injection hygiene ([SECURITY.md](../SECURITY.md)) | `UNTRUSTED_FENCING=false` |
+| Calendar tools say "No calendar (CalDAV) is connected…" instead of pointing to a `/settings` page                                                                                           | The old text referred to a UI this project doesn't ship  | none                      |
+
+Everything else is additive: new optional parameters, new tools, new output fields.
+
+---
+
+<!-- docs/PLATFORM.md -->
+
+# Platform mode: multi-tenant engine and admin API
+
+mcp-mail runs in two shapes from the same code:
+
+- **Self-hosted (default).** One mailbox owner, `accounts.json`, one `/mcp` endpoint. Nothing on
+  this page is active unless you turn it on, and behavior is identical to claude-mail-mcp v0.2.x
+  (enforced by the [compatibility gate](COMPATIBILITY.md)).
+- **Platform mode (opt-in).** Many tenants, each with their own mailboxes, agent clients,
+  limits and audit log, managed by a product through a private admin API.
+
+All extension points below are generic: any self-hoster or product can use them.
+
+## MCP protocol support
+
+Every MCP endpoint serves both protocol eras on the same URL:
+
+| Client                                                                                | How it's served                                                                     |
+| ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| 2026-07-28 (stateless, per-request `_meta`, `server/discover`)                        | SDK v2 strict handler: header validation (`-32020`), version negotiation (`-32022`) |
+| 2024-11-05 to 2025-11-25 (`initialize` handshake, e.g. existing Claude.ai connectors) | Stateless, plain JSON responses, exactly as v0.2.x                                  |
+
+## Settings
+
+| Variable                                              | Default              | Meaning                                                                                |
+| ----------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------- |
+| `MULTI_TENANT`                                        | `false`              | Serve `POST /t/<tenantId>/mcp`                                                         |
+| `DATA_DIR`                                            | `/var/lib/mcp-mail`  | Tenants, encrypted secrets, audit logs                                                 |
+| `TENANT_BASE_URL`                                     | `PUBLIC_URL`         | Public origin used in endpoint URLs, e.g. `https://connect.example.com`                |
+| `CONFIG_PROVIDER`                                     | `store`              | `store` (admin API manages tenants) or `http` (an internal service owns tenant config) |
+| `CONFIG_PROVIDER_URL`, `CONFIG_PROVIDER_TOKEN[_FILE]` |                      | For `http`: `GET <url>/tenants/<id>` with `Authorization: Bearer <token>`              |
+| `CONFIG_CACHE_TTL_MS`                                 | `30000`              | Cache TTL for `http` config                                                            |
+| `SECRETS_KEY_PROVIDER`                                | `local`              | `local` (key file) or `oci` (OCI Vault)                                                |
+| `SECRETS_KEY_FILE`                                    | `$DATA_DIR/keys/kek` | 32-byte key-encryption key, mode 0600                                                  |
+| `ADMIN_API`                                           | `false`              | Serve `/admin/v1` (requires `MULTI_TENANT=true`)                                       |
+| `ADMIN_HOST` / `ADMIN_PORT`                           | `127.0.0.1` / `3330` | Must be loopback or a private address; public binds are refused                        |
+| `ADMIN_TOKEN[_FILE]`                                  |                      | Service token, at least 32 characters                                                  |
+| `SECRETS_ENCRYPTION`                                  | unset                | Single-tenant only: `local` decrypts `enc:v1:` passwords in `accounts.json`            |
+
+## Tenants
+
+A tenant record holds limits, mailboxes (hosts, ports, users, display names) and agent clients.
+It never holds secrets: mailbox passwords live in the secret store and client tokens are stored
+only as SHA-256 hashes.
+
+**Isolation.**
+
+- A client token is only ever checked against the tenant named in the URL, so a token for
+  tenant A fails on tenant B's endpoint. Unknown tenants and bad tokens get the same `401`.
+- Account ids resolve only within the tenant, and within the client's allowed mailboxes.
+- IMAP/SMTP connections, decrypted credentials, rate counters and audit logs are per tenant.
+- Deleting a tenant closes its connections, deletes its secrets and data key, audit log, usage
+  counters and record.
+
+**Limits** (pushed by the product, enforced by the engine): `maxMailboxes`, `maxClients`,
+`toolCallsPerDay`, `allowSend`, `maxRecipientsPerSend`, `auditRetentionDays`. A suspended tenant's
+agents get "This account is suspended" on every tool call.
+
+**Client policy.** Each client has a preset that grants capabilities; tools a client may not use
+are hidden from `tools/list` and rejected if called anyway. Sending additionally needs the
+tenant's `allowSend` and the client's own `sendEnabled` toggle, which is off by default.
+
+| Preset           | Capabilities                 |
+| ---------------- | ---------------------------- |
+| `read-only`      | read, calendar-read          |
+| `read-draft`     | + draft                      |
+| `organize`       | + organize (mark read, move) |
+| `full-no-delete` | + send, calendar-write       |
+| `full`           | + destructive (delete)       |
+
+## Secret store
+
+Envelope encryption: each tenant has a random 256-bit data key; secrets are sealed with
+AES-256-GCM under it (bound to tenant and secret name), and the data key is stored only wrapped
+by a key-encryption key (KEK) from a key provider. Secrets can be set or replaced through the
+admin API but never read back through any API, log, error or tool output.
+
+Key providers:
+
+- **`local`**: a KEK file. Create it with `mcp-mail secrets init-key --key-file <path>`. Keep it
+  on a different volume from `DATA_DIR`, readable only by the engine user.
+- **`oci`**: OCI Vault master key via the crypto endpoint's `encrypt`/`decrypt` with API-key
+  request signing. Set `OCI_KMS_CRYPTO_ENDPOINT`, `OCI_KMS_KEY_ID`, `OCI_TENANCY_OCID`,
+  `OCI_USER_OCID`, `OCI_KEY_FINGERPRINT`, `OCI_PRIVATE_KEY_FILE`. The signing is unit-tested
+  against OCI's documented scheme; validate against your Vault before production use.
+
+Other KMSs implement the two-method `KeyProvider` interface in `src/platform/secrets.ts`.
+
+**Single-tenant encryption at rest** (opt-in): `mcp-mail secrets encrypt` rewrites the password
+fields of `accounts.json` as `enc:v1:…` values after writing a timestamped backup; then set
+`SECRETS_ENCRYPTION=local` and `SECRETS_KEY_FILE`. `mcp-mail secrets decrypt` reverses it.
+
+## Admin API
+
+`/admin/v1`, specified in [`openapi/admin-v1.json`](../openapi/admin-v1.json). Every response in
+the integration suite is validated against the spec, and CI fails if any operation is untested.
+Breaking changes ship as `/admin/v2`, with v1 kept for at least one major version.
+
+| Area      | Operations                                                                               |
+| --------- | ---------------------------------------------------------------------------------------- |
+| Tenants   | create, get, suspend, unsuspend, delete (purge), set limits                              |
+| Mailboxes | list, add, update (incl. password replacement), remove, test connectivity without saving |
+| Clients   | list, add (returns endpoint + token once), update, revoke, rotate                        |
+| Activity  | audit log (paginated, filter by client), usage per day and client                        |
+| Meta      | health, version                                                                          |
+
+A minimal product-side client is in [`examples/admin-client.mjs`](../examples/admin-client.mjs).
+
+## Audit log
+
+One JSONL line per tool call per tenant (`$DATA_DIR/audit/<tenant>.jsonl`, rotated at 5 MB):
+timestamp, client, tool, account, mailbox, UID, recipient count for sends, result
+(`ok`/`denied`/`error`), denial reason and duration. Message bodies, subjects, attachments,
+passwords and tokens are never logged.
+
+## `/version`
+
+Public on every deployment: package version, commit SHA, build time and (for CI-built images)
+the container image digest, so anyone can match a running deployment to a public commit.
+
+## OAuth for tenant endpoints (delegated login)
+
+Clients that can only connect through a browser sign-in (Claude.ai, ChatGPT) use OAuth. With
+`TENANT_OAUTH=true` each tenant gets its own issuer at `<TENANT_BASE_URL>/t/<tenant>/`. The
+engine has no user accounts, so the login step is handed to the product:
+
+1. The client discovers OAuth from the 401 challenge on `/t/<tenant>/mcp`, registers (DCR) and
+   opens `/t/<tenant>/authorize`.
+2. The engine redirects the browser to `OAUTH_DELEGATE_URL` with `txn` (signed, 10 minutes),
+   `tenant`, `client_name`, `redirect_host` and `return_to`.
+3. The product signs the user in, checks they own the tenant, picks or creates the agent client
+   (admin API `POST /tenants/<id>/clients`), and redirects to
+   `return_to?txn=<txn>&client=<client id>&sig=<hex HMAC-SHA256(OAUTH_DELEGATE_SECRET, "<txn>.<client id>")>`.
+   To refuse: `error=access_denied&sig=<HMAC of "<txn>.denied">`.
+4. The engine issues tokens bound to that tenant and agent client. Revoking or rotating the
+   client signs the session out.
+
+| Variable                       | Meaning                                                                    |
+| ------------------------------ | -------------------------------------------------------------------------- |
+| `TENANT_OAUTH`                 | `true` to enable (requires `MULTI_TENANT`)                                 |
+| `TENANT_TOKEN_SECRET[_FILE]`   | Master key, 64+ hex characters; each tenant's token key is derived from it |
+| `OAUTH_DELEGATE_URL`           | The product's login/consent page                                           |
+| `OAUTH_DELEGATE_SECRET[_FILE]` | Shared HMAC secret, 32+ characters                                         |
+| `TENANT_ALLOWED_REDIRECT_URIS` | Optional; defaults to Claude.ai's and ChatGPT's callbacks                  |
+
+Discovery follows RFC 8414 and RFC 9728 path insertion
+(`/.well-known/oauth-authorization-server/t/<tenant>`,
+`/.well-known/oauth-protected-resource/t/<tenant>/mcp`) and is also served under
+`/t/<tenant>/.well-known/…`. Each tenant has its own token key, state file and resource URL, so a
+token for one tenant never works on another. Deleting a tenant removes its OAuth state.
+
+## Not yet in platform mode
+
+Single-tenant OAuth and `clients.json` policies are described in [CLIENTS.md](CLIENTS.md).
+
+---
+
+<!-- SECURITY.md -->
+
+# Security Policy
+
+## Supported versions
+
+Until v1.0, only the latest minor release is supported with security fixes.
+
+| Version | Supported                                                |
+| ------- | -------------------------------------------------------- |
+| 0.2.x   | yes                                                      |
+| 0.1.x   | no — upgrade to 0.2.1 (see [CHANGELOG.md](CHANGELOG.md)) |
+
+## Reporting a vulnerability
+
+**Please do not open a public GitHub issue for security problems.**
+
+Preferred channel:
+
+1. **GitHub Private Vulnerability Reporting** — open a private advisory at
+   <https://github.com/maxx3250/claude-mail-mcp/security/advisories/new>
+
+Alternative channel:
+
+2. Email **security@markusstoeger.com**. PGP is not required.
+
+## What to include
+
+- A description of the issue and its impact
+- Steps to reproduce (or a proof of concept)
+- The affected version / commit
+- Whether the issue is already public anywhere
+
+## Response timeline
+
+- **Acknowledgement** within 48 hours
+- **Initial assessment** within 7 days
+- **Fix or status update** within 14 days
+
+If the report is valid, a fix is published as a patch release and a GitHub Security Advisory with a CVE (where applicable) is opened. Reporters are credited unless they request otherwise.
+
+## Threat model
+
+**Assets we protect:**
+
+- Mailbox credentials (IMAP/SMTP/CalDAV passwords in `accounts.json`)
+- Email content (read access, write access, deletion)
+- Calendar data
+- The Bearer token gating `/mcp`
+- The OAuth signing key
+
+**Adversaries we consider:**
+
+- Random internet attacker (port scan, brute force)
+- Malicious page loaded in the operator's browser (CSRF against `/settings`)
+- Compromised network path between Claude.ai and the connector (MITM)
+- A compromised Claude.ai client (malicious tool calls)
+- Local-system attacker (other processes on the same host)
+
+**Out of scope:**
+
+- A root-level compromise of the host. With root, all credentials are recoverable from `/var/lib/mail-mcp/accounts.json` — same security boundary as `~/.ssh/id_rsa` or `/etc/shadow`. We do not attempt at-rest encryption that depends on a key also stored on the same host.
+- Compromise of the upstream mailbox provider.
+- Phishing of the operator's htpasswd login.
+
+## What this project does
+
+### Transport
+
+- TLS terminated by nginx, certificate from Let's Encrypt (90-day rotation by `certbot.timer`).
+- HSTS, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex` on every response.
+- Backend and OAuth shim bound to `127.0.0.1` only. systemd kernel-level network filter (`IPAddressDeny=any`, `IPAddressAllow=127.0.0.1/32`) on the shim as a backstop.
+
+### Authentication
+
+- OAuth 2.1 + Dynamic Client Registration (RFC 7591) + PKCE (S256).
+- JWT access tokens (RS256, 1h TTL), refresh tokens (30d, stored as SHA-256 hashes).
+- Human login via htpasswd; brute-force throttled by nginx (`limit_req`, 10 req/min per IP).
+- `/settings` UI gated by HTTP Basic Auth against the same htpasswd file.
+- `/settings` POST endpoints additionally protected by Origin/Referer CSRF guard.
+
+### Process isolation
+
+- Both processes (backend + shim) run as the dedicated non-root `mailmcp` system user (no shell, no home directory).
+- systemd hardening: `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, `PrivateDevices`, `ProtectKernel*`, `ProtectControlGroups`, `ProtectClock`, `ProtectHostname`, `ProtectProc=invisible`, `RestrictNamespaces`, `RestrictRealtime`, `RestrictSUIDSGID`, `LockPersonality`, `SystemCallFilter=@system-service ~@privileged @resources`.
+- Writable filesystem limited to `/var/lib/mail-mcp` (state dir).
+- Memory and task caps via `MemoryMax`, `TasksMax`, `LimitNOFILE`.
+
+### Credentials at rest
+
+- `accounts.json` and `token` files are owned by `mailmcp:mailmcp` and chmod 600.
+- `.env` is `root:mailmcp` 640 (root can edit, the service can read).
+- htpasswd file is `root:mailmcp` 640 (not world-readable).
+
+### Input validation
+
+- Every MCP tool input validated with [Zod](https://zod.dev) schemas.
+- `accounts.json` schema-validated on every load (id pattern, port ranges, required fields).
+- `/settings/save` re-validates all fields and rejects bad input with a redirect.
+- Subprocess invocations (`htpasswd -vb`) use `execFile` (no shell) with a regex-gated username (`[a-zA-Z0-9_.-]{1,64}`) and a length-bounded password.
+
+### Output filtering
+
+- `list_accounts` returns id/label/default/From/imap_host/caldav_enabled — never credentials.
+- `/health` shows the same public summary.
+- Server logs never include passwords or Bearer tokens.
+
+## Hardening checklist for operators
+
+These are not vulnerabilities in this project, but operators should:
+
+- [x] Run behind HTTPS with a valid certificate (the included nginx vhost + certbot does this).
+- [x] Bind the Node processes to `127.0.0.1` and let nginx handle public traffic.
+- [x] Run the systemd units as a dedicated non-root user.
+- [x] Use a host firewall (UFW or equivalent) with default-deny incoming.
+- [ ] Rotate `AUTH_TOKEN` periodically. Restart both services after rotation.
+- [ ] Use app-specific passwords on providers that support them — never your main account password.
+- [ ] Restrict who can reach the connector at the network level (VPN, IP allowlist, or htpasswd in front of the OAuth shim).
+- [ ] Run a fail2ban jail against the shim's auth-fail log lines (`[oauth-shim] login fail` and `[oauth-shim] settings auth fail`) for additional brute-force protection.
+- [ ] Keep `accounts.json` out of any backups that leave the host unencrypted.
+- [ ] Subscribe to GitHub Security Advisories for this repo and the dependencies (`imapflow`, `nodemailer`, `tsdav`, `@modelcontextprotocol/sdk`).
+
+See [docs/HARDENING.md](docs/HARDENING.md) for the full operator checklist and threat-model walkthrough.
+
+## Prompt injection (mcp-mail)
+
+Anyone can email you, so every email body is untrusted input for the agent reading it. mcp-mail
+reduces the risk in layers:
+
+- **Fencing (default on):** bodies, previews and thread contents are wrapped in
+  `<untrusted_email_content>` delimiters with a note that the content is data, not instructions.
+  Delimiters inside a message are neutralized. Disable with `UNTRUSTED_FENCING=false`.
+- **Clean HTML:** HTML-only mail is converted to text with hidden elements (`display:none`,
+  zero-size or white-on-white text, `hidden`), scripts, styles and images (tracking pixels)
+  removed; links are shown as text with their target, so nothing is fetched automatically.
+- **Server instructions:** clients receive instructions to treat email as data and to confirm
+  sends and deletions with the user.
+- **Least privilege:** give agents only the capabilities they need (`clients.json` presets,
+  docs/CLIENTS.md). Sending can be limited by recipient allowlist and rate; permanent deletion
+  needs an explicit capability.
+
+None of this makes an agent immune: keep humans in the loop for sends and deletions.
+
+---
+
+<!-- docs/ADDING_A_TOOL.md -->
+
+# Adding a tool
+
+Tools are registered in `src/tools-mail.ts` (mail) or `src/tools-calendar.ts` (calendar). Every
+tool gets client policy, auditing, annotations and server instructions for free: the guard and
+annotation wrappers sit in front of `registerTool`. You only declare the tool and its capability.
+
+Example: `count_unread` (a read-only tool), 30 lines.
+
+```ts
+// 1. src/policy/capabilities.ts — declare exactly one capability
+export const TOOL_CAPABILITY = {
+  // ...
+  count_unread: "read",
+};
+
+// 2. src/imap-client.ts — the provider method (keep IMAP details here)
+async countUnread(mailbox: string): Promise<number> {
+  const client = await this.ensureConnected();
+  const status = await client.status(mailbox, { unseen: true });
+  return status.unseen ?? 0;
+}
+
+// 3. src/tools-mail.ts — inside registerMailTools()
+server.registerTool(
+  "count_unread",
+  {
+    description: "Count unread messages in a folder.",
+    inputSchema: z.object({
+      mailbox: z.string().optional().describe("Folder (default INBOX)"),
+      account: accountSchema,
+    }),
+  },
+  async ({ mailbox, account }) => {
+    const { imap } = pool.for(account);
+    return asJson({ mailbox: mailbox ?? "INBOX", unread: await imap.countUnread(mailbox ?? "INBOX") });
+  },
+);
+```
+
+Then:
+
+- Add a test in `test/platform/mail-tools.int.test.ts` (runs against GreenMail).
+- Treat message content as untrusted: wrap bodies with `fence()` from `src/content.ts`.
+- Never add a required parameter to an existing tool or remove an output field; the
+  compatibility gate (`npm run test:compat`) fails if you do.
