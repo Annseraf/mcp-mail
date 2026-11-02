@@ -16,6 +16,7 @@ const files = [
   "docs/COMPATIBILITY.md",
   "docs/PLATFORM.md",
   "SECURITY.md",
+  "docs/INSTALL.md",
   "docs/ADDING_A_TOOL.md",
 ];
 const out = files

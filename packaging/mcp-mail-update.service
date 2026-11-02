@@ -1,0 +1,8 @@
+[Unit]
+Description=mcp-mail update check (same major version, verified, with rollback)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/mcp-mail/bin/mcp-mail-update --now

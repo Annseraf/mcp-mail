@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# mcp-mail-update — install newer mcp-mail releases with verification and rollback.
+#   --check            show the current and newest available version (same major)
+#   --now              install the newest release in the same major version
+#   --major            allow a new major version (with --now)
+#   --version X.Y.Z    install a specific version
+#   --enable-auto / --disable-auto   turn the daily update timer on or off
+set -euo pipefail
+# shellcheck source=packaging/lib.sh
+. /opt/mcp-mail/lib.sh
+
+CONF=/etc/mcp-mail/install.conf
+[ -r "$CONF" ] || die "missing $CONF (was mcp-mail installed with install.sh?)"
+# shellcheck disable=SC1090
+. "$CONF" # SERVICE, ENV_FILE, PORT
+
+mode=check major=0 want=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --check) mode=check ;;
+    --now) mode=now ;;
+    --major) major=1 ;;
+    --version) want="$2"; mode=now; shift ;;
+    --enable-auto) systemctl enable --now mcp-mail-update.timer; log "auto-update enabled"; exit 0 ;;
+    --disable-auto) systemctl disable --now mcp-mail-update.timer; log "auto-update disabled"; exit 0 ;;
+    *) die "unknown option $1" ;;
+  esac
+  shift
+done
+
+current="$(basename "$(readlink -f "$ROOT/current")")"
+cur_major="${current%%.*}"
+target="${want:-$(latest_version "$([ "$major" = 1 ] && echo "" || echo "$cur_major")")}" || die "could not query releases"
+[ -n "$target" ] || die "no releases found"
+
+if [ "$mode" = check ]; then
+  echo "current ${current}, available ${target}"
+  version_gt "$target" "$current" && echo "update available" || echo "up to date"
+  exit 0
+fi
+if [ -z "$want" ] && ! version_gt "$target" "$current"; then log "up to date (${current})"; exit 0; fi
+
+install -d -m 755 "$LOG_DIR"
+exec >>"$LOG_DIR/update.log" 2>&1 || true
+log "updating ${current} -> ${target}"
+dest="$ROOT/releases/${target}"
+[ -d "$dest" ] || fetch_release "$target" "$dest"
+prev="$(readlink -f "$ROOT/current")"
+switch_to "$dest"
+systemctl restart "$SERVICE"
+if health "$PORT" "$ENV_FILE"; then
+  log "updated to ${target}"
+  prune_releases
+  exit 0
+fi
+log "health check failed on ${target}; rolling back to $(basename "$prev")"
+switch_to "$prev"
+systemctl restart "$SERVICE"
+health "$PORT" "$ENV_FILE" && log "rolled back to $(basename "$prev")" || log "ROLLBACK UNHEALTHY: check journalctl -u $SERVICE"
+exit 1
