@@ -19,14 +19,18 @@ import {
   toWebRequest,
 } from "@modelcontextprotocol/node";
 
-import type { AccountsStore } from "./accounts.js";
-import type { ClientPool } from "./client-pool.js";
+import { StaticAccounts, type AccountsStore } from "./accounts.js";
+import type { ClientPool, PoolLike } from "./client-pool.js";
+import { OAuthServer } from "./auth/oauth.js";
+import type { AuthSettings } from "./auth/settings.js";
+import { ClientsStore, type Identity } from "./policy/clients-file.js";
+import { guardTools, type ClientPolicy } from "./policy/guard.js";
 import { buildMcpServer } from "./mcp-server.js";
 import { buildInfo } from "./version.js";
 import { createAdminApp } from "./admin/api.js";
-import { AuditLog } from "./platform/audit.js";
+import { AuditLog, StdoutAudit, type AuditSink } from "./platform/audit.js";
 import { OciKmsKeyProvider } from "./platform/oci-kms.js";
-import { guardTools, TenantRuntime, type TenantContext } from "./platform/runtime.js";
+import { guardTenantTools, TenantRuntime, type TenantContext } from "./platform/runtime.js";
 import {
   EnvelopeFileSecretStore,
   LocalKeyFileProvider,
@@ -50,11 +54,15 @@ export type Log = (
 export interface EngineOptions {
   version: string;
   authToken: string;
+  /** Public origin (PUBLIC_URL), used as the OAuth issuer. */
+  publicUrl?: string;
   accountsFile: string;
   store: AccountsStore;
   pool: ClientPool;
   platform: PlatformSettings;
   log: Log;
+  /** Client identities, OAuth and auditing for /mcp (docs/CLIENTS.md). */
+  auth?: AuthSettings;
   /** Tests inject these; production builds them from settings. */
   keyProvider?: KeyProvider;
   fetchImpl?: typeof fetch;
@@ -70,6 +78,8 @@ export interface Platform {
 
 export interface Engine {
   app: Express;
+  oauth?: OAuthServer;
+  clients?: ClientsStore;
   admin?: Express;
   platform?: Platform;
   close(): Promise<void>;
@@ -122,14 +132,97 @@ export async function createEngine(o: EngineOptions): Promise<Engine> {
     const given = Buffer.from(candidate);
     return given.length === expectedToken.length && timingSafeEqual(given, expectedToken);
   };
-  const bearerAuth = (req: Request, res: Response, next: NextFunction): void => {
+  const authSettings = o.auth ?? {
+    clientsFile: path.join(path.dirname(o.accountsFile), "clients.json"),
+  };
+  const clients = new ClientsStore(authSettings.clientsFile);
+  const oauth = authSettings.oauth
+    ? new OAuthServer({
+        publicUrl: o.publicUrl ?? "http://localhost:3220",
+        ...authSettings.oauth,
+        log,
+      })
+    : undefined;
+  const audit: AuditSink | undefined =
+    authSettings.auditLog === "stdout"
+      ? new StdoutAudit()
+      : authSettings.auditLog
+        ? new AuditLog(path.dirname(authSettings.auditLog), authSettings.auditLog)
+        : undefined;
+  if (oauth) app.use(oauth.router());
+
+  let warnedLegacy = false;
+  const unauthorized = (req: Request, res: Response) => {
+    log("warn", "rejected unauthenticated MCP request", { ip: req.ip, path: req.path });
+    if (oauth) res.set("WWW-Authenticate", oauth.challenge());
+    res.status(401).json({ error: "unauthorized", message: "Missing or invalid Bearer token" });
+  };
+
+  /**
+   * Resolve who is calling: the shared AUTH_TOKEN (built-in "legacy" client),
+   * an OAuth access token, or a static client token from clients.json; then
+   * attach the client's policy. Without clients.json, OAuth or AUDIT_LOG the
+   * request is served exactly like v0.2.x.
+   */
+  const clientAuth = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const match = /^Bearer\s+(.+)$/i.exec(req.header("authorization") ?? "");
-    if (!match || !tokenMatches(match[1])) {
-      log("warn", "rejected unauthenticated MCP request", { ip: req.ip, path: req.path });
-      res.status(401).json({ error: "unauthorized", message: "Missing or invalid Bearer token" });
+    if (!match) return unauthorized(req, res);
+    const token = match[1];
+    let identity: Identity | undefined;
+    if (tokenMatches(token)) {
+      identity = { kind: "legacy" };
+    } else if (oauth) {
+      const grant = await oauth.verifyAccessToken(token);
+      if (grant)
+        identity = {
+          kind: "oauth",
+          user: grant.user,
+          clientId: grant.clientId,
+          issuedAt: grant.issuedAt,
+        };
+    }
+    identity ??= { kind: "token", token };
+    let resolution;
+    try {
+      resolution = await clients.resolve(identity);
+    } catch (err) {
+      log("error", "clients.json could not be loaded", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      res.status(503).json({ error: "unavailable", message: "Client configuration is invalid" });
       return;
     }
+    if ("rejected" in resolution) return unauthorized(req, res);
+    const hasClientsFile = (await clients.load()) !== undefined;
+    if (identity.kind === "legacy" && hasClientsFile && !warnedLegacy) {
+      warnedLegacy = true;
+      log(
+        "warn",
+        "request used the shared AUTH_TOKEN; consider per-client tokens (mcp-mail clients add)",
+      );
+    }
+    (req as Request & { auth?: AuthInfo }).auth = {
+      token: "",
+      clientId: resolution.policy.id,
+      scopes: [],
+      expiresAt: Math.floor(Date.now() / 1000) + 3600,
+      extra: { policy: resolution.policy, guarded: hasClientsFile || audit !== undefined },
+    };
     next();
+  };
+
+  const singleTenantServer = (authInfo?: AuthInfo): McpServer => {
+    const policy = authInfo?.extra?.policy as ClientPolicy | undefined;
+    if (!policy || !authInfo?.extra?.guarded) return buildMcpServer(o.version, o.pool, o.store);
+    const accounts = policy.accounts
+      ? new StaticAccounts(o.store.list().filter((a) => policy.accounts!.includes(a.id)))
+      : o.store;
+    const pool: PoolLike = policy.accounts
+      ? { for: (id?: string) => o.pool.for(accounts.resolve(id).id) }
+      : o.pool;
+    return buildMcpServer(o.version, pool, accounts, (server) =>
+      guardTools(server, { policy, audit: audit ? { log: audit, tenantId: "local" } : undefined }),
+    );
   };
 
   app.get("/health", (_req, res) => {
@@ -192,10 +285,13 @@ export async function createEngine(o: EngineOptions): Promise<Engine> {
       });
     };
   };
+  const singleEndpoint = mcpEndpoint(singleTenantServer);
   app.post(
     "/mcp",
-    bearerAuth,
-    mcpEndpoint(() => buildMcpServer(o.version, o.pool, o.store)),
+    (req, res, next) => {
+      clientAuth(req, res, next).catch(next);
+    },
+    singleEndpoint,
   );
 
   // ---- multi-tenant ----
@@ -207,7 +303,7 @@ export async function createEngine(o: EngineOptions): Promise<Engine> {
     const tenantEndpoint = mcpEndpoint((authInfo) => {
       const ctx = authInfo?.extra?.tenant as TenantContext;
       return buildMcpServer(o.version, ctx.pool, ctx.accounts, (server) =>
-        guardTools(server, ctx, p.audit),
+        guardTenantTools(server, ctx, p.audit),
       );
     });
     app.post("/t/:tenantId/mcp", async (req, res) => {
@@ -262,6 +358,8 @@ export async function createEngine(o: EngineOptions): Promise<Engine> {
 
   return {
     app,
+    oauth,
+    clients,
     admin,
     platform,
     async close() {

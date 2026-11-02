@@ -66,12 +66,7 @@ describe("OAuth shim v0.1 formats", () => {
     expect(actual.equals(Buffer.from(hash, "base64url"))).toBe(true);
   });
 
-  // Enabled when the engine gains built-in OAuth (Phase 3/4).
-  it.todo("engine accepts fixture.accessTokenValid for /mcp with TOKEN_SECRET set");
-  it.todo("engine rejects accessTokenExpired and accessTokenUnknownClient with 401");
-  it.todo("engine exchanges fixture.refreshToken from an existing state.json and rotates it");
-  it.todo(
-    "engine serves the same discovery, /register, /authorize, /token, /revoke and /login paths",
-  );
-  it.todo("engine verifies LOGIN_USER + LOGIN_PASSWORD_HASH logins");
+  // The engine's acceptance of these formats (tokens, state.json refresh,
+  // login hash, discovery paths) is proven end to end in
+  // test/platform/clients.int.test.ts ("OAuth shim continuity").
 });

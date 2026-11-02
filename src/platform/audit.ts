@@ -44,18 +44,27 @@ export class AuditLog {
   private readonly usage = new Map<string, UsageFile>();
   private readonly flushTimers = new Map<string, NodeJS.Timeout>();
 
-  constructor(private readonly dir: string) {}
+  /**
+   * @param dir Directory holding `<tenant>.jsonl` files.
+   * @param singleFile Single-tenant mode: one log file for everything (e.g. /var/log/mcp-mail/audit.jsonl).
+   */
+  constructor(
+    private readonly dir: string,
+    private readonly singleFile?: string,
+  ) {}
 
   private logFile(t: string) {
-    return path.join(this.dir, `${assertTenantId(t)}.jsonl`);
+    return this.singleFile ?? path.join(this.dir, `${assertTenantId(t)}.jsonl`);
   }
   private usageFile(t: string) {
-    return path.join(this.dir, `${assertTenantId(t)}.usage.json`);
+    return this.singleFile
+      ? `${this.singleFile}.usage.json`
+      : path.join(this.dir, `${assertTenantId(t)}.usage.json`);
   }
 
   async record(e: AuditEntry): Promise<void> {
     const file = this.logFile(e.tenantId);
-    await fs.mkdir(this.dir, { recursive: true, mode: 0o700 });
+    await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
     try {
       const st = await fs.stat(file);
       if (st.size > MAX_BYTES) await fs.rename(file, `${file}.1`);
@@ -158,3 +167,12 @@ export class AuditLog {
     await removeFile(`${file}.1`);
   }
 }
+
+/** Audit sink that writes JSONL to stdout (journald/docker logs). */
+export class StdoutAudit {
+  async record(e: AuditEntry): Promise<void> {
+    process.stdout.write(JSON.stringify({ audit: true, ...e }) + "\n");
+  }
+}
+
+export type AuditSink = Pick<AuditLog, "record">;
