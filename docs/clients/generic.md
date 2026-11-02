@@ -11,7 +11,7 @@ curl -s https://mail.example.com/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
-**Local (stdio).** `npx -y mcp-mail stdio`, with `ACCOUNTS_FILE` and optional `STDIO_PRESET`.
+**Local (stdio).** `npx -y @annseraf/mcp-mail stdio`, with `ACCOUNTS_FILE` and optional `STDIO_PRESET`.
 
 Clients that only support OAuth sign-in can use the built-in OAuth server (`OAUTH=true`); see
 [claude-ai.md](claude-ai.md).

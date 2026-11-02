@@ -7,7 +7,7 @@
   "mcpServers": {
     "email": {
       "command": "npx",
-      "args": ["-y", "mcp-mail", "stdio"],
+      "args": ["-y", "@annseraf/mcp-mail", "stdio"],
       "env": { "STDIO_PRESET": "read-draft" }
     }
   }

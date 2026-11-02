@@ -11,7 +11,7 @@ Claude Desktop, `claude_desktop_config.json`:
   "mcpServers": {
     "email": {
       "command": "npx",
-      "args": ["-y", "mcp-mail", "stdio"],
+      "args": ["-y", "@annseraf/mcp-mail", "stdio"],
       "env": {
         "ACCOUNTS_FILE": "/Users/you/.config/mcp-mail/accounts.json",
         "STDIO_PRESET": "read-draft"
@@ -24,7 +24,7 @@ Claude Desktop, `claude_desktop_config.json`:
 Claude Code:
 
 ```sh
-claude mcp add email -e STDIO_PRESET=read-draft -- npx -y mcp-mail stdio
+claude mcp add email -e STDIO_PRESET=read-draft -- npx -y @annseraf/mcp-mail stdio
 ```
 
 `STDIO_PRESET` is optional (`read-only`, `read-draft`, `organize`, `full-no-delete`, `full`).

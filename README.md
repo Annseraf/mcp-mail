@@ -6,7 +6,7 @@
 curl -fsSL https://raw.githubusercontent.com/Annseraf/mcp-mail/main/install.sh | sudo bash -s -- --auto-update
 ```
 
-Local clients (Claude Desktop, Claude Code, Cursor, VS Code) can run it directly: `npx -y mcp-mail stdio`.
+Local clients (Claude Desktop, Claude Code, Cursor, VS Code) can run it directly: `npx -y @annseraf/mcp-mail stdio`.
 
 mcp-mail is a maintained continuation of [claude-mail-mcp](https://github.com/maxx3250/claude-mail-mcp) by Markus Stöger (MIT). Existing claude-mail-mcp v0.2 installs can switch with **no config changes** ([compatibility contract](docs/COMPATIBILITY.md)).
 
