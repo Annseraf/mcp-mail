@@ -1,6 +1,6 @@
 {
   "name": "mcp-mail",
-  "version": "0.2.1",
+  "version": "1.0.0",
   "description": "Self-hosted IMAP/SMTP email MCP server for Claude, ChatGPT, Cursor and any MCP client, with per-client permissions, audit log and one-line install.",
   "license": "MIT",
   "author": "Mohith K Das",

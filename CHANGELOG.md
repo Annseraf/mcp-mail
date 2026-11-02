@@ -2,6 +2,26 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.0.0](https://github.com/Annseraf/mcp-mail/compare/v0.2.1...v1.0.0) (2026-11-02)
+
+
+### Features
+
+* ChatGPT search/fetch adapters, tool annotations, stdio transport ([a03cf20](https://github.com/Annseraf/mcp-mail/commit/a03cf2092c3f9978acfb32f90967948c3748360b))
+* client identities, built-in OAuth 2.1, policies and audit log ([1c36334](https://github.com/Annseraf/mcp-mail/commit/1c36334a4b1d3c3b1cd8d948b6416604f84958e5))
+* mail tool gaps, signatures and prompt-injection hygiene ([206cafe](https://github.com/Annseraf/mcp-mail/commit/206cafe49b4d05aa462446a47adf845ec3285a97))
+* multi-tenant mode, envelope-encrypted secret store and admin API ([cf66db4](https://github.com/Annseraf/mcp-mail/commit/cf66db4de37e8613701924da7f7ec21e3d8d9468))
+* OAuth for tenant endpoints with delegated login ([2f7682f](https://github.com/Annseraf/mcp-mail/commit/2f7682f3b969d8cf011fbd2ffc65f13e69f3f22e))
+* release pipeline, one-line installer and verified auto-update ([24ec04d](https://github.com/Annseraf/mcp-mail/commit/24ec04de6afa1d03c6bf8645b95a6d091a4166eb))
+* serve MCP 2026-07-28 via SDK v2 alongside legacy clients ([f6b44b1](https://github.com/Annseraf/mcp-mail/commit/f6b44b1c11984302545a98921881546cabbb8b57))
+
+
+### Bug Fixes
+
+* **install:** avoid SIGPIPE on tar listing under pipefail; CI unit uses env node ([978f3d6](https://github.com/Annseraf/mcp-mail/commit/978f3d671cad930b86aa42e37071eb054953a9d8))
+* **install:** read the release's own package.json version; CI test fixes ([8870d6f](https://github.com/Annseraf/mcp-mail/commit/8870d6f8a5eae1be220ade884388ab6c420d512b))
+* one McpServer per request and constant-time bearer check ([21160b0](https://github.com/Annseraf/mcp-mail/commit/21160b051d1e057b68a406754ae970508721d958))
+
 ## [0.2.1] — 2026-05-21
 
 Security hardening pass. No new features; no breaking API changes.
