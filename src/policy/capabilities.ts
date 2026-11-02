@@ -18,7 +18,8 @@ export const TOOL_CAPABILITY: Record<string, Capability> = {
   send_message: "send",
   mark_read: "organize",
   move_message: "organize",
-  delete_message: "destructive",
+  // Moves to Trash; `permanent: true` additionally needs "destructive" (capabilityOf).
+  delete_message: "organize",
   list_calendars: "calendar-read",
   list_events: "calendar-read",
   find_free_slot: "calendar-read",
@@ -33,8 +34,16 @@ export const PRESETS: Record<Preset, Capability[]> = {
   full: ["read", "calendar-read", "draft", "organize", "calendar-write", "send", "destructive"],
 };
 
-export const capabilityOf = (tool: string): Capability => TOOL_CAPABILITY[tool] ?? "destructive";
+/** Capability a call needs. Unknown tools are treated as destructive. */
+export function capabilityOf(tool: string, args?: Record<string, unknown>): Capability {
+  if (tool === "delete_message" && args?.permanent === true) return "destructive";
+  return TOOL_CAPABILITY[tool] ?? "destructive";
+}
 
-export function presetAllows(preset: Preset, tool: string): boolean {
-  return PRESETS[preset].includes(capabilityOf(tool));
+export function presetAllows(
+  preset: Preset,
+  tool: string,
+  args?: Record<string, unknown>,
+): boolean {
+  return PRESETS[preset].includes(capabilityOf(tool, args));
 }

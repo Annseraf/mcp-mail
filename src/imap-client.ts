@@ -259,6 +259,17 @@ export class ImapClient {
     }
   }
 
+  /** The Trash folder: the \\Trash special-use folder, else a conventionally named one. */
+  async findTrash(): Promise<string | undefined> {
+    const boxes = await this.listMailboxes();
+    const special = boxes.find((m) => m.specialUse === "\\Trash");
+    if (special) return special.path;
+    const named = boxes.find((m) =>
+      /^(trash|deleted items|deleted messages|bin|papierkorb)$/i.test(m.name),
+    );
+    return named?.path;
+  }
+
   async deleteMessage(mailbox: string, uid: number): Promise<void> {
     const client = await this.ensureConnected();
     const lock = await client.getMailboxLock(mailbox);

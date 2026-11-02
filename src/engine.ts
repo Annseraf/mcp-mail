@@ -26,7 +26,7 @@ import { buildInfo } from "./version.js";
 import { createAdminApp } from "./admin/api.js";
 import { AuditLog } from "./platform/audit.js";
 import { OciKmsKeyProvider } from "./platform/oci-kms.js";
-import { guardTools, TenantRuntime, type TenantContext } from "./platform/runtime.js";
+import { guardTenantTools, TenantRuntime, type TenantContext } from "./platform/runtime.js";
 import {
   EnvelopeFileSecretStore,
   LocalKeyFileProvider,
@@ -207,7 +207,7 @@ export async function createEngine(o: EngineOptions): Promise<Engine> {
     const tenantEndpoint = mcpEndpoint((authInfo) => {
       const ctx = authInfo?.extra?.tenant as TenantContext;
       return buildMcpServer(o.version, ctx.pool, ctx.accounts, (server) =>
-        guardTools(server, ctx, p.audit),
+        guardTenantTools(server, ctx, p.audit),
       );
     });
     app.post("/t/:tenantId/mcp", async (req, res) => {

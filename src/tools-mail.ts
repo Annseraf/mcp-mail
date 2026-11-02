@@ -26,6 +26,10 @@ function asJson(value: unknown): { content: { type: "text"; text: string }[] } {
   };
 }
 
+function errorText(text: string): { content: { type: "text"; text: string }[]; isError: true } {
+  return { content: [{ type: "text" as const, text }], isError: true };
+}
+
 const recipientSchema = z.union([z.string(), z.array(z.string()).min(1)]);
 
 const accountSchema = z
@@ -327,17 +331,36 @@ export function registerMailTools(server: McpServer, pool: PoolLike, store: Acco
     "delete_message",
     {
       description:
-        "Delete a message. DESTRUCTIVE — most IMAP servers move it to Trash but some EXPUNGE immediately. Prefer move_message to a Trash folder for reversibility.",
+        "Delete a message by moving it to the account's Trash folder (reversible). Pass permanent: true to delete it permanently instead — DESTRUCTIVE and irreversible; confirm with the user first. Permanent deletion may be disabled for this client.",
       inputSchema: z.object({
         mailbox: z.string(),
         uid: positiveInt(),
         account: accountSchema,
+        permanent: z
+          .boolean()
+          .optional()
+          .describe("Delete permanently instead of moving to Trash (default false)"),
       }),
     },
-    async ({ mailbox, uid, account }) => {
+    async ({ mailbox, uid, account, permanent }) => {
       const { imap } = pool.for(account);
-      await imap.deleteMessage(mailbox, uid);
-      return asJson({ success: true, mailbox, uid });
+      if (permanent) {
+        await imap.deleteMessage(mailbox, uid);
+        return asJson({ success: true, mailbox, uid, permanent: true });
+      }
+      const trash = await imap.findTrash();
+      if (!trash) {
+        return errorText(
+          "No Trash folder found on this account. Use move_message to file it elsewhere, or pass permanent: true to delete it permanently.",
+        );
+      }
+      if (trash === mailbox) {
+        return errorText(
+          "This message is already in Trash. Pass permanent: true to delete it permanently.",
+        );
+      }
+      await imap.moveMessage(mailbox, uid, trash);
+      return asJson({ success: true, mailbox, uid, permanent: false, moved_to: trash });
     },
   );
 }

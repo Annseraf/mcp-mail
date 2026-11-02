@@ -6,7 +6,8 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { StaticAccounts, type Account } from "../accounts.js";
 import { ClientPool, type AccountClients, type PoolLike } from "../client-pool.js";
-import { capabilityOf, presetAllows } from "../policy/capabilities.js";
+import { capabilityOf, PRESETS } from "../policy/capabilities.js";
+import { guardTools, recipientsOf, type Denial } from "../policy/guard.js";
 import type { AuditLog } from "./audit.js";
 import type { SecretStore } from "./secrets.js";
 import type { ClientRecord, ConfigProvider, MailboxRecord, TenantRecord } from "./tenants.js";
@@ -126,89 +127,45 @@ export class TenantRuntime {
   }
 }
 
-type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
-
-const denied = (text: string): ToolResult => ({ content: [{ type: "text", text }], isError: true });
-
-function countRecipients(args: Record<string, unknown>): number {
-  const n = (v: unknown) => (Array.isArray(v) ? v.length : typeof v === "string" && v ? 1 : 0);
-  return n(args.to) + n(args.cc) + n(args.bcc);
-}
-
-/**
- * Wrap `server.registerTool` so every tool registered afterwards is filtered
- * by the client's policy (hidden from tools/list) and guarded at dispatch.
- */
-export function guardTools(server: McpServer, ctx: TenantContext, audit: AuditLog): void {
+/** Guard a tenant client's tools: preset capabilities plus tenant limits and send controls. */
+export function guardTenantTools(server: McpServer, ctx: TenantContext, audit: AuditLog): void {
   const { tenant, client } = ctx;
-  const visible = (tool: string) => presetAllows(client.preset, tool);
-  const original = server.registerTool.bind(server) as (...a: unknown[]) => unknown;
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (server as unknown as { registerTool: (...a: any[]) => unknown }).registerTool = (
-    name: string,
-    config: unknown,
-    cb: (args: Record<string, unknown>, extra: unknown) => Promise<ToolResult>,
-  ) => {
-    if (!visible(name)) return undefined;
-    return original(name, config, async (args: Record<string, unknown>, extra: unknown) => {
-      const started = Date.now();
-      const base = {
-        ts: new Date().toISOString(),
-        tenantId: tenant.id,
-        clientId: client.id,
-        tool: name,
-        account: typeof args.account === "string" ? args.account : undefined,
-        mailbox: typeof args.mailbox === "string" ? args.mailbox : undefined,
-        uid: typeof args.uid === "number" ? args.uid : undefined,
-      };
-      const deny = async (reason: string, text: string) => {
-        await audit
-          .record({ ...base, result: "denied", reason, durationMs: Date.now() - started })
-          .catch(() => {});
-        return denied(text);
-      };
-
-      if (tenant.status !== "active")
-        return deny("tenant-suspended", "This account is suspended. Contact support.");
-      if (!visible(name)) return deny("capability", `This client is not allowed to use ${name}.`);
-      if ((await audit.callsToday(tenant.id)) >= tenant.limits.toolCallsPerDay) {
-        return deny(
-          "daily-limit",
-          "Daily tool-call limit reached for this account. Try again tomorrow.",
-        );
+  guardTools(server, {
+    policy: {
+      id: client.id,
+      capabilities: new Set(PRESETS[client.preset]),
+      accounts: client.accounts,
+    },
+    audit: { log: audit, tenantId: tenant.id },
+    rateKey: `${tenant.id}/${client.id}`,
+    async check(tool, args): Promise<Denial | undefined> {
+      if (tenant.status !== "active") {
+        return { reason: "tenant-suspended", text: "This account is suspended. Contact support." };
       }
-      if (capabilityOf(name) === "send") {
-        if (!tenant.limits.allowSend)
-          return deny("send-not-allowed", "Sending email is not enabled for this account.");
-        if (!client.sendEnabled)
-          return deny("send-disabled", "Sending email is turned off for this client.");
-        const recipients = countRecipients(args);
-        if (recipients > tenant.limits.maxRecipientsPerSend) {
-          return deny(
-            "recipient-cap",
-            `Too many recipients (max ${tenant.limits.maxRecipientsPerSend}).`,
-          );
+      if ((await audit.callsToday(tenant.id)) >= tenant.limits.toolCallsPerDay) {
+        return {
+          reason: "daily-limit",
+          text: "Daily tool-call limit reached for this account. Try again tomorrow.",
+        };
+      }
+      if (capabilityOf(tool, args) === "send") {
+        if (!tenant.limits.allowSend) {
+          return {
+            reason: "send-not-allowed",
+            text: "Sending email is not enabled for this account.",
+          };
+        }
+        if (!client.sendEnabled) {
+          return { reason: "send-disabled", text: "Sending email is turned off for this client." };
+        }
+        if (recipientsOf(args).length > tenant.limits.maxRecipientsPerSend) {
+          return {
+            reason: "recipient-cap",
+            text: `Too many recipients (max ${tenant.limits.maxRecipientsPerSend}).`,
+          };
         }
       }
-      const recipients = capabilityOf(name) === "send" ? countRecipients(args) : undefined;
-      try {
-        const result = await cb(args, extra);
-        await audit
-          .record({
-            ...base,
-            recipients,
-            result: result?.isError ? "error" : "ok",
-            durationMs: Date.now() - started,
-          })
-          .catch(() => {});
-        return result;
-      } catch (err) {
-        await audit
-          .record({ ...base, recipients, result: "error", durationMs: Date.now() - started })
-          .catch(() => {});
-        throw err;
-      }
-    });
-  };
+      return undefined;
+    },
+  });
 }
