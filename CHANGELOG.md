@@ -2,6 +2,14 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.0.1](https://github.com/Annseraf/mcp-mail/compare/v1.0.0...v1.0.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* publish to npm as @annseraf/mcp-mail ([#18](https://github.com/Annseraf/mcp-mail/issues/18)) ([0d2543d](https://github.com/Annseraf/mcp-mail/commit/0d2543dfae57ed4c74d72bbace3c09b81fd4b0a8))
+* **release:** pin cosign-installer v4.1.2 and allow re-publishing a tag ([#17](https://github.com/Annseraf/mcp-mail/issues/17)) ([fc6f17f](https://github.com/Annseraf/mcp-mail/commit/fc6f17f796687855001ee3707e069c680fe63992))
+
 ## [1.0.0](https://github.com/Annseraf/mcp-mail/compare/v0.2.1...v1.0.0) (2026-11-02)
 
 
