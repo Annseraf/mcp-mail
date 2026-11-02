@@ -139,8 +139,10 @@ export class ClientsStore {
       entry =
         doc.clients.find((c) => c.match?.oauthClientId === identity.clientId) ??
         doc.clients.find((c) => c.match?.oauthUser === identity.user);
-      if (entry?.notBefore && identity.issuedAt * 1000 < Date.parse(entry.notBefore))
+      // Token iat has second resolution; compare at the same resolution.
+      if (entry?.notBefore && identity.issuedAt < Math.floor(Date.parse(entry.notBefore) / 1000)) {
         return { rejected: "revoked" };
+      }
       if (!entry) {
         return {
           policy: {

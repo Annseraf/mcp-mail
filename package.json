@@ -1,33 +1,43 @@
 {
-  "name": "claude-mail-mcp",
+  "name": "mcp-mail",
   "version": "0.2.1",
-  "description": "Self-hosted IMAP/SMTP/CalDAV connector for Claude — Streamable HTTP MCP server. Read+write email and calendar against any RFC-compliant mailbox (Mailbox.org, Fastmail, iCloud, Mailcow, iRedMail, Migadu, Nextcloud, …).",
+  "description": "Self-hosted IMAP/SMTP email MCP server for Claude, ChatGPT, Cursor and any MCP client, with per-client permissions, audit log and one-line install.",
   "license": "MIT",
-  "author": "Markus Stöger <hi@markusstoeger.com> (https://markusstoeger.com)",
-  "homepage": "https://markusstoeger.com/repos#claude-mail-mcp",
+  "author": "Mohith K Das",
+  "homepage": "https://github.com/Annseraf/mcp-mail#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/maxx3250/claude-mail-mcp.git"
+    "url": "git+https://github.com/Annseraf/mcp-mail.git"
   },
   "bugs": {
-    "url": "https://github.com/maxx3250/claude-mail-mcp/issues"
+    "url": "https://github.com/Annseraf/mcp-mail/issues"
   },
   "keywords": [
-    "claude",
-    "anthropic",
     "mcp",
     "model-context-protocol",
+    "mcp-server",
+    "email",
     "imap",
     "smtp",
     "caldav",
-    "email",
-    "calendar",
+    "claude",
+    "chatgpt",
+    "cursor",
+    "ai-agents",
     "self-hosted",
-    "connector"
+    "oauth2",
+    "purelymail",
+    "fastmail",
+    "icloud",
+    "gmail",
+    "email-assistant",
+    "llm",
+    "multi-tenant"
   ],
   "type": "module",
   "main": "dist/index.js",
   "bin": {
+    "mcp-mail": "./dist/index.js",
     "claude-mail-mcp": "./dist/index.js"
   },
   "files": [
@@ -35,7 +45,9 @@
     "README.md",
     "LICENSE",
     ".env.example",
-    "openapi"
+    "openapi",
+    "llms.txt",
+    "docs"
   ],
   "scripts": {
     "build": "tsc && node scripts/build-info.mjs",
@@ -51,7 +63,8 @@
     "check": "npm run lint && npm run format:check && npm run typecheck && npm test && npm run licenses && npm run build",
     "test:compat": "npm run build && COMPAT_GATE=1 vitest run",
     "compat:baseline": "tsx scripts/compat-baseline.ts",
-    "openapi": "node scripts/gen-openapi.mjs && prettier --write openapi/admin-v1.json"
+    "openapi": "node scripts/gen-openapi.mjs && prettier --write openapi/admin-v1.json",
+    "docs": "node scripts/gen-llms-full.mjs"
   },
   "engines": {
     "node": ">=20"
@@ -85,5 +98,9 @@
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.72.1",
     "vitest": "^5.0.5"
-  }
+  },
+  "contributors": [
+    "Markus Stöger <hi@markusstoeger.com> (https://markusstoeger.com) — original claude-mail-mcp"
+  ],
+  "mcpName": "io.github.annseraf/mcp-mail"
 }

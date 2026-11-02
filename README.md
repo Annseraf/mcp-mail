@@ -1,220 +1,129 @@
-# claude-mail-mcp
+# mcp-mail
 
-> **mcp-mail** is a maintained continuation of [claude-mail-mcp](https://github.com/maxx3250/claude-mail-mcp) by Markus Stöger (MIT). Upstream history and copyright are preserved; see [NOTICE](NOTICE). This README will be rewritten as the fork evolves.
+**mcp-mail is a self-hosted IMAP/SMTP email MCP server that lets Claude, ChatGPT, Cursor and any other MCP client read, search, draft and send email from your existing mailbox, with per-client permissions, an audit log and a one-line install.**
 
-Self-hosted **IMAP / SMTP / CalDAV connector for Claude** with multi-account support. A Streamable HTTP MCP server that lets [Claude.ai](https://claude.ai) read and write your email + calendar against any RFC-compliant mailbox.
-
-> Built because every other Claude email connector targets Gmail. This one is for the rest of us — Mailbox.org, Fastmail, iCloud, Mailcow, iRedMail, Migadu, Nextcloud, your own Postfix box. If your provider speaks IMAP, SMTP and CalDAV, this works. One connector, all your inboxes.
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Node](https://img.shields.io/badge/node-%3E=20-brightgreen.svg)](https://nodejs.org)
-
----
-
-## What it does
-
-Exposes 14 MCP tools to Claude:
-
-**Accounts (1)**
-
-| Tool            | Purpose                                                                                                   |
-| --------------- | --------------------------------------------------------------------------------------------------------- |
-| `list_accounts` | List all configured mailboxes — id, label, default flag, From, CalDAV-enabled. Never returns credentials. |
-
-**Mail (9)**
-
-| Tool              | Purpose                                                   |
-| ----------------- | --------------------------------------------------------- |
-| `list_folders`    | Enumerate IMAP mailboxes (`INBOX`, `Sent`, …)             |
-| `list_messages`   | Newest N messages in a folder                             |
-| `search_messages` | Server-side IMAP search (from/to/subject/body/date/flags) |
-| `get_message`     | Full body + headers + attachment metadata                 |
-| `send_message`    | Send via SMTP, optionally copy to Sent folder             |
-| `create_draft`    | Build RFC-822 and APPEND to Drafts                        |
-| `mark_read`       | Toggle `\Seen` flag                                       |
-| `move_message`    | Move between folders                                      |
-| `delete_message`  | Delete (destructive — prefer move to Trash)               |
-
-**Calendar (4)**
-
-| Tool             | Purpose                                             |
-| ---------------- | --------------------------------------------------- |
-| `list_calendars` | Discover CalDAV calendars                           |
-| `list_events`    | Events in a time window (recurrences expanded)      |
-| `create_event`   | Add new event (writes to CalDAV)                    |
-| `find_free_slot` | Compute free intervals across one or more calendars |
-
-Every tool accepts an optional `account: "<id>"` parameter to pick a mailbox; omit it to use the default account. So "list unread in INBOX of work account" vs "compare today's calendar across work and personal" both work in one connector.
-
----
-
-## Why bring-your-own-server?
-
-Hosted email-AI services need full mailbox access. That's a lot of trust to hand to a vendor. This connector flips the model: **you run it, you hold the credentials, no third party between Claude and your inbox**.
-
-- One Node process per mailbox
-- Credentials in a single `.env` file
-- One Bearer token gates every MCP call
-- Add the URL to Claude.ai once, done
-
----
-
-## Quick start
-
-```bash
-git clone https://github.com/maxx3250/claude-mail-mcp.git
-cd claude-mail-mcp
-npm install
-cp .env.example .env
-# Generate an AUTH_TOKEN and fill it into .env:
-#   echo "AUTH_TOKEN=$(openssl rand -hex 32)" >> .env
-npm run build
-npm start
+```sh
+curl -fsSL https://raw.githubusercontent.com/Annseraf/mcp-mail/main/install.sh | sudo bash -s -- --auto-update
 ```
 
-The server boots with **no mailboxes configured** — that's fine. Add them via the OAuth shim's `/settings` UI (see [Deployment](docs/DEPLOYMENT.md)) or hand-craft an `accounts.json`:
+Local clients (Claude Desktop, Claude Code, Cursor, VS Code) can run it directly: `npx -y mcp-mail stdio`.
 
-```json
-{
-  "version": 1,
-  "accounts": [
-    {
-      "id": "main",
-      "label": "Main",
-      "default": true,
-      "imap": {
-        "host": "imap.mailbox.org",
-        "port": 993,
-        "user": "you@example.com",
-        "pass": "secret",
-        "tls": true
-      },
-      "smtp": {
-        "host": "smtp.mailbox.org",
-        "port": 465,
-        "user": "you@example.com",
-        "pass": "secret",
-        "tls": true
-      },
-      "mail": { "defaultFrom": "you@example.com", "draftsFolder": "Drafts", "sentFolder": "Sent" }
-    }
-  ]
-}
-```
+mcp-mail is a maintained continuation of [claude-mail-mcp](https://github.com/maxx3250/claude-mail-mcp) by Markus Stöger (MIT). Existing claude-mail-mcp v0.2 installs can switch with **no config changes** ([compatibility contract](docs/COMPATIBILITY.md)).
 
-Save as `/root/.config/mail-mcp/accounts.json` (chmod 600), or set `ACCOUNTS_FILE=./accounts.json` in `.env` for local dev. The backend re-reads via `fs.watch`, no restart needed.
+## Works with
 
-Smoke test:
+- **AI clients:** Claude.ai, Claude Desktop, Claude Code, ChatGPT (developer mode, deep research), Cursor, VS Code, Meta Muse, and any MCP client over Streamable HTTP or stdio. Setup guides: [docs/clients](docs/clients/).
+- **Mail providers:** any IMAP/SMTP mailbox: Fastmail, iCloud, Purelymail, Gmail and Google Workspace (app password), Yahoo, Zoho, Mailbox.org, Migadu, Mailcow, Dovecot/Postfix.
+- **Calendars:** any CalDAV server (Fastmail, iCloud, Nextcloud, Radicale), optional.
+- **MCP protocol:** 2026-07-28 (stateless) and every earlier revision since 2024-11-05, on the same endpoint.
 
-```bash
-curl http://localhost:3220/health
-# {"status":"ok","server":"claude-mail-mcp","version":"0.2.0","accounts":[{…}],…}
-```
+## Tools
 
----
+| Tool                                              | What it does                                                                               | Capability             |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------- |
+| `list_accounts`                                   | List connected mailboxes, sender names and signatures (never credentials)                  | read                   |
+| `list_folders`                                    | List folders with their special use (Inbox, Sent, Drafts, Trash)                           | read                   |
+| `list_messages`                                   | Newest messages in a folder, with short previews                                           | read                   |
+| `search_messages`                                 | Search one folder, several, or all (`"*"`) by sender, subject, body, date, read or flagged | read                   |
+| `get_message`                                     | Read one message: headers, body, attachment list, threading ids                            | read                   |
+| `get_attachment`                                  | Download one attachment (size-capped)                                                      | read                   |
+| `get_thread`                                      | Read a whole conversation across Inbox and Sent, oldest first                              | read                   |
+| `list_threads`                                    | Group a folder's newest messages into conversations                                        | read                   |
+| `create_draft`                                    | Save a draft (with attachments); `reply_to_uid` fills in the reply for you                 | draft                  |
+| `mark_read`                                       | Mark a message read or unread                                                              | organize               |
+| `set_flags`                                       | Star (flag), mark answered, or add custom keywords                                         | organize               |
+| `move_message`                                    | Move a message to another folder                                                           | organize               |
+| `delete_message`                                  | Move to Trash; `permanent: true` deletes for good                                          | organize / destructive |
+| `send_message`                                    | Send an email (with attachments and signature); a copy goes to Sent                        | send                   |
+| `update_account_settings`                         | Change the sender display name and signature                                               | settings               |
+| `list_calendars`, `list_events`, `find_free_slot` | Read calendars and find free time                                                          | calendar-read          |
+| `create_event`                                    | Create a calendar event                                                                    | calendar-write         |
+| `search`, `fetch`                                 | ChatGPT deep research adapters (`CHATGPT_COMPAT=true`)                                     | read                   |
 
-## Connecting from Claude.ai
+## Comparison
 
-The server speaks the **Streamable HTTP MCP transport**. To use it from Claude.ai (web), you need an OAuth 2.1 + DCR + PKCE layer in front because Claude.ai does not support raw Bearer auth.
+|                                     | **mcp-mail**                                                                  | claude-mail-mcp v0.2               |
+| ----------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------- |
+| Transport                           | Streamable HTTP (2026-07-28 + legacy) and stdio                               | Streamable HTTP                    |
+| Auth                                | Built-in OAuth 2.1 (DCR, PKCE), per-client tokens, shared token               | Shared token + separate OAuth shim |
+| Per-client permissions              | Presets, tool allow/deny, mailbox scope, recipient allowlist, send rate limit | —                                  |
+| Read-only mode                      | `read-only` preset (or `STDIO_PRESET=read-only`)                              | —                                  |
+| Revoke one client                   | Yes, others keep working                                                      | Rotate the shared secret           |
+| Attachments                         | Send, draft and download                                                      | Send only                          |
+| Threads, flags, multi-folder search | Yes                                                                           | —                                  |
+| Audit log                           | JSONL, no message content                                                     | —                                  |
+| Prompt-injection hygiene            | Untrusted-content fencing, hidden-HTML stripping, server instructions         | —                                  |
+| Multi-tenant + admin API            | Opt-in, with OpenAPI spec                                                     | —                                  |
+| Install and updates                 | One-line installer, signed releases, auto-update with rollback                | Manual                             |
 
-The recommended setup mirrors what [claude-meta-mcp](https://github.com/maxx3250/claude-meta-mcp) uses:
+Other IMAP MCP servers worth a look, depending on your needs: [codefuturist/email-mcp](https://github.com/codefuturist/email-mcp) (TypeScript, IMAP/SMTP, many tools), [tecnologicachile/mail-mcp](https://github.com/tecnologicachile/mail-mcp) (Rust, IMAP/SMTP plus Microsoft Graph and EWS) and [wildsurfer/your-mail-mcp](https://github.com/wildsurfer/your-mail-mcp) (read-only, local notmuch index). Check their READMEs for current features.
 
-1. Terminate TLS with nginx / Caddy on a public hostname (e.g. `mcp-mail.yourdomain.com`)
-2. Put a tiny **OAuth shim** in front that issues short-lived Bearer tokens after a basic-auth login
-3. Add the public URL as a Custom Connector in Claude.ai (Settings → Connectors → Add custom)
+## FAQ
 
-See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the full nginx + systemd + shim recipe.
+### How do I give ChatGPT read-only access to my email?
 
-For local testing without a shim, you can call `/mcp` directly with `Authorization: Bearer <AUTH_TOKEN>` from any MCP client that supports custom headers (Claude Desktop config, or a stdio bridge).
+Run `mcp-mail clients add chatgpt --for chatgpt` (OAuth login, `read-only` preset), enable `OAUTH=true`, and add the server in ChatGPT's developer mode. ChatGPT only ever sees the read tools. See [docs/clients/chatgpt.md](docs/clients/chatgpt.md).
 
----
+### Can I use this with Fastmail, iCloud, Purelymail or Gmail?
 
-## Provider notes
+Yes. Anything that speaks IMAP and SMTP works. For Gmail, iCloud, Yahoo and Fastmail, create an app password in the provider's security settings and use it instead of your normal password.
 
-### App passwords (mandatory on 2FA accounts)
+### How do I stop an AI agent from sending email?
 
-| Provider                     | IMAP host               | SMTP host                         | App password page                                       |
-| ---------------------------- | ----------------------- | --------------------------------- | ------------------------------------------------------- |
-| Mailbox.org                  | `imap.mailbox.org:993`  | `smtp.mailbox.org:465`            | App passwords aren't needed; main password works        |
-| Fastmail                     | `imap.fastmail.com:993` | `smtp.fastmail.com:465`           | <https://app.fastmail.com/settings/security/devicekeys> |
-| iCloud                       | `imap.mail.me.com:993`  | `smtp.mail.me.com:587` (STARTTLS) | <https://appleid.apple.com> → App-Specific Passwords    |
-| Gmail                        | `imap.gmail.com:993`    | `smtp.gmail.com:465`              | <https://myaccount.google.com/apppasswords>             |
-| Mailcow / iRedMail / Postfix | your server             | your server                       | n/a                                                     |
+Give the agent a preset without `send` (`read-only`, `read-draft` or `organize`). The send tool then disappears from its tool list and is rejected if called anyway. For agents that may send, restrict recipients with `sendRecipientAllowlist` and cap volume with `sendRateLimit`. See [docs/CLIENTS.md](docs/CLIENTS.md).
 
-### CalDAV endpoints
+### Can an email trick the AI into doing something?
 
-| Provider    | URL                                                                  |
-| ----------- | -------------------------------------------------------------------- |
-| Fastmail    | `https://caldav.fastmail.com/dav/principals/user/USER@fastmail.com/` |
-| Mailbox.org | `https://dav.mailbox.org/caldav/`                                    |
-| iCloud      | `https://caldav.icloud.com/`                                         |
-| Nextcloud   | `https://cloud.example.com/remote.php/dav/principals/users/USER/`    |
+Emails are untrusted input. mcp-mail wraps every body in untrusted-content delimiters, strips hidden HTML text and tracking pixels, and tells clients to confirm sends and deletions with you. Keep sending off for agents that don't need it. See [SECURITY.md](SECURITY.md).
 
-If your provider doesn't speak CalDAV, leave `CALDAV_URL` empty and the calendar tools won't be registered. Mail still works.
+### Does deleting a message lose it forever?
 
----
+No. `delete_message` moves the message to Trash. Permanent deletion needs `permanent: true` and a client with the `destructive` capability.
 
-## Architecture
+### Where are my passwords stored?
 
-```
-Claude.ai (web)
-    │  HTTPS + OAuth 2.1
-    ▼
-nginx (TLS, /health passthrough)
-    │
-    ├──▶ /mcp/* ─▶ OAuth shim (Port 3212)  ──▶ Bearer ──▶ this server (Port 3220)
-    └──▶ /health ────────────────────────────────────────▶ this server (Port 3220)
+In `accounts.json` on your server (optionally encrypted at rest with `mcp-mail secrets encrypt`). In multi-tenant mode, credentials are envelope-encrypted per tenant with a local key file or OCI Vault. They are never returned by any tool, API or log.
 
-this server
-    ├── ImapClient   ──▶  imapflow  ──▶  IMAP server (993/143)
-    ├── SmtpClient   ──▶  nodemailer ─▶  SMTP server (465/587)
-    └── CalDavClient ──▶  tsdav     ──▶  CalDAV server
-```
+### Can my agent sign emails?
 
-Everything is one Node process. IMAP holds a single long-lived connection with per-call mailbox locks. SMTP and CalDAV are stateless per call.
+Yes. Each account can have a sender display name and a signature, set in `accounts.json` or by the agent itself with `update_account_settings`. Pass `include_signature: false` to send without it.
 
----
+### I'm on claude-mail-mcp. Do I need to change anything?
+
+No. Swap the binary; your `.env`, `accounts.json` and connected clients keep working. CI enforces this against recorded v0.2.1 behavior.
 
 ## Security model
 
-See **[SECURITY.md](SECURITY.md)** for the threat model and **[docs/HARDENING.md](docs/HARDENING.md)** for the full operator checklist.
+- Binds to `127.0.0.1` by default; put nginx or Caddy in front for TLS.
+- Clients authenticate with OAuth 2.1 (PKCE, rotating refresh tokens), per-client static tokens (stored hashed), or the legacy shared token.
+- Every tool call is checked against the client's policy twice: when listing tools and when calling them.
+- The audit log records who did what, never message content.
+- Mail content is fenced as untrusted; sends and deletions should be confirmed by a human.
+- Releases are built by CI from tagged commits only, with checksums and provenance attestation.
 
-Defaults in one sentence: TLS via Let's Encrypt + HSTS + rate-limited htpasswd + OAuth 2.1 with CSRF guard + non-root systemd unit with `ProtectSystem=strict` + kernel-level loopback-only filter + credentials chmod 600 owned by a dedicated `mailmcp` user.
+Details: [SECURITY.md](SECURITY.md), [docs/CLIENTS.md](docs/CLIENTS.md), [docs/PLATFORM.md](docs/PLATFORM.md).
 
-### Quick summary
+## Configuration
 
-- **Transport:** TLS 1.3 (Let's Encrypt, auto-renew), HSTS, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex`.
-- **Auth:** OAuth 2.1 + DCR + PKCE + JWT (RS256, 1h access, 30d refresh) gated by htpasswd login. CSRF guard on `/settings` POST. Brute-force throttled at nginx (10 req/min on auth endpoints).
-- **Process:** Both services run as a dedicated non-root `mailmcp` system user (no shell). Full systemd hardening: `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `ProtectKernel*`, `ProtectClock`, `ProtectHostname`, `ProtectProc=invisible`, `RestrictNamespaces`, `LockPersonality`, `SystemCallFilter=@system-service ~@privileged @resources`, `MemoryMax=512M`.
-- **Network:** Backend + shim bound to `127.0.0.1` only. Shim also blocks non-loopback at kernel level (`IPAddressDeny=any`). UFW default-deny on the host.
-- **Storage:** Credentials chmod 600, owned by `mailmcp`, in `/var/lib/mail-mcp/`. htpasswd file chmod 640 (not world-readable). `.env` chmod 640 `root:mailmcp`.
-- **Output:** `list_accounts` returns id/label/From — never credentials. Logs never include passwords or Bearer tokens.
-- **Destructive tools** (`delete_message`) document irreversibility so Claude.ai surfaces a confirmation step. Prefer `move_message` to a Trash folder for reversibility.
+- `.env`: transport settings ([.env.example](.env.example)). Everything new is optional.
+- `accounts.json`: mailboxes (same format as claude-mail-mcp; optional `fromName`/`signature`).
+- `clients.json`: per-client identities and policies ([docs/CLIENTS.md](docs/CLIENTS.md)).
+- Multi-tenant mode and the admin API: [docs/PLATFORM.md](docs/PLATFORM.md).
 
-Full threat-model walkthrough and operator hardening checklist in [docs/HARDENING.md](docs/HARDENING.md). Reporting issues: see [SECURITY.md](SECURITY.md).
+## Upgrading
 
----
+From claude-mail-mcp v0.2.x: **no config changes required.** Install mcp-mail pointing at the same `.env`, `accounts.json` and (if you use one) OAuth state. New features stay off until you enable them. Two approved behavior changes are listed in [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md#intentional-deviations): deleting moves to Trash, and email content is fenced as untrusted (`UNTRUSTED_FENCING=false` restores the old output).
 
-## Roadmap
+## Development
 
-- **v0.2** ✅ — Multi-account per deployment, browser setup flow (this release)
-- **v0.3** — Threading-aware `list_threads` tool, attachment download as base64, calendar invitation (iMIP) sending
-- **v0.4** — CardDAV (contacts), JMAP support as an alternative to IMAP for Fastmail/Topicbox
-- **v1.0** — Audit log, Prometheus metrics, rate limiting, hardened deployment guide
+```sh
+npm ci
+npm run check        # lint, format, typecheck, unit tests, license scan, build
+npm run test:compat  # compatibility gate + integration suites (needs GreenMail, see docs/COMPATIBILITY.md)
+```
 
----
+Adding a tool: [docs/ADDING_A_TOOL.md](docs/ADDING_A_TOOL.md). Contributions: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
-
-## Acknowledgements
-
-- [imapflow](https://imapflow.com/) — modern Promise-based IMAP client
-- [nodemailer](https://nodemailer.com/) — the only Node SMTP client worth using
-- [tsdav](https://github.com/natelindev/tsdav) — clean TypeScript WebDAV/CalDAV/CardDAV
-- [ical.js](https://github.com/kewisch/ical.js) — battle-tested iCalendar parser
-- [@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol/typescript-sdk) — Anthropic's official MCP SDK
-
----
-
-Built by [Markus Stöger](https://markusstoeger.com) — WooCommerce, headless commerce and AI integration.
+MIT. Copyright (c) 2026 Markus Stöger and (c) 2026 Mohith K Das and mcp-mail contributors. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

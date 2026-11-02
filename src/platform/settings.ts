@@ -21,6 +21,13 @@ export interface PlatformSettings {
   adminHost: string;
   adminPort: number;
   adminToken?: string;
+  /** OAuth for tenant endpoints with login delegated to the product (TENANT_OAUTH=true). */
+  tenantOAuth?: {
+    tokenSecretHex: string;
+    delegateUrl: string;
+    delegateSecret: string;
+    allowedRedirectUris?: string[];
+  };
 }
 
 const flag = (v: string | undefined) => v === "true" || v === "1";
@@ -81,6 +88,32 @@ export function loadPlatformSettings(
         `ADMIN_HOST=${s.adminHost} is not a private interface; the admin API must never be public`,
       );
     }
+  }
+  if (flag(env.TENANT_OAUTH)) {
+    if (!s.multiTenant) throw new Error("TENANT_OAUTH=true requires MULTI_TENANT=true");
+    const tokenSecretHex = secret(env, "TENANT_TOKEN_SECRET");
+    const delegateSecret = secret(env, "OAUTH_DELEGATE_SECRET");
+    const delegateUrl = env.OAUTH_DELEGATE_URL?.trim();
+    if (!tokenSecretHex || !/^[0-9a-f]{64,}$/i.test(tokenSecretHex)) {
+      throw new Error(
+        "TENANT_OAUTH=true requires TENANT_TOKEN_SECRET (at least 64 hex characters)",
+      );
+    }
+    if (!delegateUrl || !delegateSecret || delegateSecret.length < 32) {
+      throw new Error(
+        "TENANT_OAUTH=true requires OAUTH_DELEGATE_URL and OAUTH_DELEGATE_SECRET (32+ characters)",
+      );
+    }
+    s.tenantOAuth = {
+      tokenSecretHex,
+      delegateUrl,
+      delegateSecret,
+      allowedRedirectUris: env.TENANT_ALLOWED_REDIRECT_URIS
+        ? env.TENANT_ALLOWED_REDIRECT_URIS.split(",")
+            .map((u) => u.trim())
+            .filter(Boolean)
+        : undefined,
+    };
   }
   if (
     s.multiTenant &&

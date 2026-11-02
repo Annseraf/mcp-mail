@@ -1,0 +1,20 @@
+# mcp-mail
+
+> Self-hosted IMAP/SMTP email MCP server for Claude, ChatGPT, Cursor and any MCP client, with per-client permissions, audit log and one-line install. MIT licensed; a maintained continuation of claude-mail-mcp.
+
+mcp-mail exposes an existing mailbox (any IMAP/SMTP provider, optional CalDAV calendar) to AI agents over the Model Context Protocol, via Streamable HTTP (protocol 2026-07-28 and earlier) or stdio. Each agent gets its own credentials and a permission preset (read-only, read-draft, organize, full-no-delete, full); tools it may not use are hidden and rejected. Email content is fenced as untrusted to reduce prompt injection. An opt-in platform mode adds multi-tenant endpoints, encrypted per-tenant secrets and an admin API.
+
+## Docs
+
+- [README](https://github.com/Annseraf/mcp-mail/blob/main/README.md): what it is, tools, comparison, FAQ
+- [Client setup](https://github.com/Annseraf/mcp-mail/tree/main/docs/clients): Claude.ai, Claude Desktop/Code, ChatGPT, Cursor, VS Code, Meta Muse, generic
+- [Clients, OAuth, policies, audit](https://github.com/Annseraf/mcp-mail/blob/main/docs/CLIENTS.md)
+- [Compatibility with claude-mail-mcp](https://github.com/Annseraf/mcp-mail/blob/main/docs/COMPATIBILITY.md)
+- [Platform mode and admin API](https://github.com/Annseraf/mcp-mail/blob/main/docs/PLATFORM.md)
+- [Security and prompt injection](https://github.com/Annseraf/mcp-mail/blob/main/SECURITY.md)
+- [Adding a tool](https://github.com/Annseraf/mcp-mail/blob/main/docs/ADDING_A_TOOL.md)
+
+## Optional
+
+- [Admin API OpenAPI spec](https://github.com/Annseraf/mcp-mail/blob/main/openapi/admin-v1.json)
+- [Full docs in one file](https://github.com/Annseraf/mcp-mail/blob/main/llms-full.txt)

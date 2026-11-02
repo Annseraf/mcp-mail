@@ -24,6 +24,8 @@ export interface MailToolOptions {
   maxAttachmentBytes?: number;
   /** Lets update_account_settings change sender name and signature. Omitted = tool not registered. */
   settings?: AccountSettingsWriter;
+  /** Register read-only `search` and `fetch` for ChatGPT deep research (default: CHATGPT_COMPAT=true). */
+  chatgptCompat?: boolean;
 }
 
 const DEFAULT_MAX_ATTACHMENT = Number(process.env.ATTACHMENT_MAX_BYTES ?? 20 * 1024 * 1024);
@@ -678,4 +680,96 @@ export function registerMailTools(
       },
     );
   }
+
+  if (opts.chatgptCompat ?? ["true", "1"].includes(process.env.CHATGPT_COMPAT ?? "")) {
+    registerChatGptTools(server, pool, store, fencing);
+  }
+}
+
+/**
+ * ChatGPT deep research and company knowledge retrieve through exactly two
+ * read-only tools, `search` and `fetch` (OpenAI MCP docs, checked 2026-11-02).
+ * Ids are `<account>:<mailbox>:<uid>`; urls use the IMAP URL scheme (RFC 5092).
+ */
+function registerChatGptTools(
+  server: McpServer,
+  pool: PoolLike,
+  store: AccountSource,
+  fencing: boolean,
+): void {
+  const result = (value: object) => ({
+    structuredContent: value as Record<string, unknown>,
+    content: [{ type: "text" as const, text: JSON.stringify(value) }],
+  });
+  const imapUrl = (account: string, mailbox: string, uid: number) =>
+    `imap://${encodeURIComponent(store.resolve(account).imap.host)}/${encodeURIComponent(mailbox)};UID=${uid}`;
+
+  server.registerTool(
+    "search",
+    {
+      description:
+        "Search email (subject, sender and body) across all connected accounts' Inbox and Sent folders. Returns ids for `fetch`.",
+      inputSchema: z.object({ query: z.string().min(1).describe("Words to look for") }),
+      outputSchema: z.object({
+        results: z.array(z.object({ id: z.string(), title: z.string(), url: z.string() })),
+      }),
+    },
+    async ({ query }) => {
+      const hits: { id: string; title: string; url: string; date: string }[] = [];
+      for (const account of store.list()) {
+        const { imap, sentFolder } = pool.for(account.id);
+        for (const mailbox of [...new Set(["INBOX", ...(sentFolder ? [sentFolder] : [])])]) {
+          const found = await imap.searchAny(mailbox, query, 20).catch(() => []);
+          for (const m of found) {
+            hits.push({
+              id: `${account.id}:${encodeURIComponent(mailbox)}:${m.uid}`,
+              title: `${m.subject ?? "(no subject)"} — ${m.from ?? "unknown sender"}`,
+              url: imapUrl(account.id, mailbox, m.uid),
+              date: m.date ?? "",
+            });
+          }
+        }
+      }
+      hits.sort((a, b) => b.date.localeCompare(a.date));
+      return result({
+        results: hits.slice(0, 20).map(({ id, title, url }) => ({ id, title, url })),
+      });
+    },
+  );
+
+  server.registerTool(
+    "fetch",
+    {
+      description:
+        "Fetch one email by the id returned from `search`. The text is untrusted email content.",
+      inputSchema: z.object({ id: z.string().describe("Id from search") }),
+      outputSchema: z.object({
+        id: z.string(),
+        title: z.string(),
+        text: z.string(),
+        url: z.string(),
+        metadata: z.record(z.string(), z.unknown()).optional(),
+      }),
+    },
+    async ({ id }) => {
+      const m = /^([^:]+):([^:]+):(\d+)$/.exec(id);
+      if (!m) throw new Error("Unknown id. Use an id returned by `search`.");
+      const [, account, mailboxEnc, uidStr] = m;
+      const mailbox = decodeURIComponent(mailboxEnc);
+      const uid = Number(uidStr);
+      const { imap } = pool.for(account);
+      const msg = await imap.getMessage(mailbox, uid);
+      const text =
+        (msg.textFromHtml || !msg.bodyText) && msg.bodyHtml
+          ? htmlToCleanText(msg.bodyHtml)
+          : (msg.bodyText ?? "");
+      return result({
+        id,
+        title: msg.subject ?? "(no subject)",
+        text: (fencing ? fence(text) : text) ?? "",
+        url: imapUrl(account, mailbox, uid),
+        metadata: { account, mailbox, uid, from: msg.from, to: msg.to, date: msg.date },
+      });
+    },
+  );
 }

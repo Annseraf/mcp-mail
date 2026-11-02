@@ -110,8 +110,15 @@ async function main(): Promise<void> {
   process.on("SIGINT", () => void shutdown("SIGINT"));
 }
 
-const cli = ["secrets", "clients", "audit"].includes(process.argv[2] ?? "");
-(cli ? runCli(process.argv.slice(2)).then((code) => process.exit(code)) : main()).catch((err) => {
+const command = process.argv[2] ?? "";
+const cli = ["secrets", "clients", "audit"].includes(command);
+const run =
+  command === "stdio"
+    ? import("./stdio.js").then((m) => m.runStdio())
+    : cli
+      ? runCli(process.argv.slice(2)).then((code) => process.exit(code))
+      : main();
+run.catch((err) => {
   console.error("Fatal startup error:", err);
   process.exit(1);
 });

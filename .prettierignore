@@ -6,3 +6,4 @@ CHANGELOG.md
 .plans/
 compat/baseline/
 compat/fixtures/
+llms-full.txt

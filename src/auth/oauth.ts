@@ -26,9 +26,12 @@ const MAX_CLIENTS = 50;
 export const DEFAULT_REDIRECT_URIS = [
   "https://claude.ai/api/mcp/auth_callback",
   "https://claude.com/api/mcp/auth_callback",
+  // ChatGPT's stable callback (used because we implement RFC 9207 issuer identification).
+  "https://chatgpt.com/connector_platform_oauth_redirect",
 ];
 
 export interface OAuthOptions {
+  /** Issuer base, e.g. https://mail.example.com or https://connect.example.com/t/<tenant>. */
   publicUrl: string;
   tokenSecretHex: string;
   stateFile: string;
@@ -38,6 +41,13 @@ export interface OAuthOptions {
   /** Extra logins: JSON { "users": { "<name>": "<scrypt hash>" } }. */
   usersFile?: string;
   allowedRedirectUris?: string[];
+  /**
+   * Hand the login step to another service (multi-tenant products). /authorize
+   * redirects to `url` with a signed `txn`; the service authenticates the user
+   * and redirects back to `<issuer>oauth/callback?txn=..&client=<id>&sig=..`
+   * where sig = hex HMAC-SHA256(secret, "<txn>.<client>") ("<txn>.denied" to refuse).
+   */
+  delegate?: { url: string; secret: string; tenantId?: string };
   log?: (level: "info" | "warn", msg: string, extra?: Record<string, unknown>) => void;
 }
 
@@ -119,9 +129,14 @@ export class OAuthServer {
       throw new Error("TOKEN_SECRET must be >= 32 hex characters");
     this.secret = Buffer.from(o.tokenSecretHex, "hex");
     const base = new URL(o.publicUrl);
+    if (!base.pathname.endsWith("/")) base.pathname += "/";
     this.issuer = base.href;
-    this.resource = new URL("/mcp", base).href;
-    this.resourceMetadataUrl = new URL("/.well-known/oauth-protected-resource/mcp", base).href;
+    this.resource = new URL("mcp", base).href;
+    // RFC 9728: metadata lives at /.well-known/oauth-protected-resource + the resource path.
+    this.resourceMetadataUrl = new URL(
+      `/.well-known/oauth-protected-resource${new URL(this.resource).pathname}`,
+      base,
+    ).href;
     this.redirects = o.allowedRedirectUris ?? DEFAULT_REDIRECT_URIS;
   }
 
@@ -295,7 +310,7 @@ export class OAuthServer {
   // ---- HTTP ----
 
   metadata() {
-    const u = (p: string) => new URL(p, this.issuer).href;
+    const u = (p: string) => new URL(p.replace(/^\//, ""), this.issuer).href;
     return {
       issuer: this.issuer,
       authorization_endpoint: u("/authorize"),
@@ -434,10 +449,69 @@ export class OAuthServer {
         rs: q.resource ?? null,
         exp: nowS() + LOGIN_TXN_TTL_S,
       });
+      if (this.o.delegate) {
+        const target = new URL(this.o.delegate.url);
+        target.searchParams.set("txn", txn);
+        target.searchParams.set("client_name", String(client.client_name ?? "An MCP client"));
+        target.searchParams.set("redirect_host", new URL(redirectUri).host);
+        target.searchParams.set("return_to", new URL("oauth/callback", this.issuer).href);
+        if (this.o.delegate.tenantId) target.searchParams.set("tenant", this.o.delegate.tenantId);
+        res.redirect(302, target.href);
+        return;
+      }
       this.renderLogin(res, { txn, client, redirectUri });
     });
     r.get("/authorize", authorize);
     r.post("/authorize", form, authorize);
+
+    r.get(
+      "/oauth/callback",
+      wrap(async (req, res) => {
+        await this.ensureLoaded();
+        const d = this.o.delegate;
+        const q = req.query as Record<string, string>;
+        if (!d || !q.txn || !q.sig)
+          throw new OAuthError("invalid_request", "Missing parameters", 400);
+        const outcome = q.error === "access_denied" ? "denied" : (q.client ?? "");
+        const expected = createHmac("sha256", d.secret).update(`${q.txn}.${outcome}`).digest();
+        const given = Buffer.from(q.sig, "hex");
+        if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
+          throw new OAuthError("access_denied", "Invalid signature", 400);
+        }
+        const txn = this.unsign(q.txn);
+        if (!txn || txn.typ !== "txn" || (txn.exp as number) < nowS()) {
+          res
+            .status(400)
+            .type("text/plain")
+            .send("Login session expired. Start the connection again from your app.");
+          return;
+        }
+        const client = this.state.clients[String(txn.cid)];
+        if (!client || !client.redirect_uris.includes(String(txn.ru)))
+          throw new OAuthError("invalid_client", "Unknown client");
+        const target = new URL(String(txn.ru));
+        if (txn.st) target.searchParams.set("state", String(txn.st));
+        target.searchParams.set("iss", this.issuer);
+        if (outcome === "denied" || !outcome) {
+          target.searchParams.set("error", "access_denied");
+          res.redirect(302, target.href);
+          return;
+        }
+        const code = b64url(randomBytes(32));
+        this.codes.set(code, {
+          clientId: client.client_id,
+          challenge: String(txn.cc),
+          redirectUri: String(txn.ru),
+          scopes: (txn.sc as string[]) ?? [],
+          resource: (txn.rs as string | null) ?? null,
+          user: outcome,
+          exp: Date.now() + CODE_TTL_MS,
+        });
+        this.o.log?.("info", "delegated login ok", { client_id: client.client_id, user: outcome });
+        target.searchParams.set("code", code);
+        res.redirect(302, target.href);
+      }),
+    );
 
     r.post(
       "/login",
@@ -625,7 +699,7 @@ label{display:block;font-size:.85rem;margin:.75rem 0 .25rem}input{width:100%;box
 button{margin-top:1.25rem;width:100%;padding:.65rem;border:0;border-radius:8px;background:#2563eb;color:#fff;font:inherit;cursor:pointer}
 .err{color:#dc2626;font-size:.85rem;margin-top:.75rem}
 </style></head><body>
-<form method="post" action="/login" autocomplete="on">
+<form method="post" action="login" autocomplete="on">
 <h1>Authorize mail connector</h1>
 <p><b>${escapeHtml(v.client.client_name || "An MCP client")}</b> wants access to your mailboxes on ${escapeHtml(new URL(this.issuer).host)}.<br>You'll be returned to <b>${escapeHtml(host)}</b>.</p>
 <input type="hidden" name="txn" value="${escapeHtml(v.txn)}">
