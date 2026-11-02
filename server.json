@@ -3,16 +3,26 @@
   "name": "io.github.annseraf/mcp-mail",
   "title": "mcp-mail",
   "description": "Self-hosted IMAP/SMTP email for any MCP client, with per-client permissions and audit log.",
-  "repository": { "url": "https://github.com/Annseraf/mcp-mail", "source": "github" },
+  "repository": {
+    "url": "https://github.com/Annseraf/mcp-mail",
+    "source": "github"
+  },
   "websiteUrl": "https://annseraf.github.io/mcp-mail/",
-  "version": "0.2.1",
+  "version": "1.0.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "mcp-mail",
-      "version": "0.2.1",
-      "transport": { "type": "stdio" },
-      "packageArguments": [{ "type": "positional", "value": "stdio" }],
+      "version": "1.0.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "stdio"
+        }
+      ],
       "environmentVariables": [
         {
           "name": "ACCOUNTS_FILE",
