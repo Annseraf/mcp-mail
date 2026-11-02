@@ -7,3 +7,4 @@ CHANGELOG.md
 compat/baseline/
 compat/fixtures/
 llms-full.txt
+.release-please-manifest.json
