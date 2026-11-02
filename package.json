@@ -105,7 +105,7 @@
   "contributors": [
     "Markus Stöger <hi@markusstoeger.com> (https://markusstoeger.com) — original claude-mail-mcp"
   ],
-  "mcpName": "io.github.annseraf/mcp-mail",
+  "mcpName": "io.github.Annseraf/mcp-mail",
   "publishConfig": {
     "access": "public"
   }

@@ -1,6 +1,6 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.annseraf/mcp-mail",
+  "name": "io.github.Annseraf/mcp-mail",
   "title": "mcp-mail",
   "description": "Self-hosted IMAP/SMTP email for any MCP client, with per-client permissions and audit log.",
   "repository": {
