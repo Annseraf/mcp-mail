@@ -41,13 +41,16 @@
     "claude-mail-mcp": "./dist/index.js"
   },
   "files": [
-    "dist",
-    "README.md",
-    "LICENSE",
     ".env.example",
-    "openapi",
+    "LICENSE",
+    "README.md",
+    "compat/baseline",
+    "dist",
+    "docs",
+    "install.sh",
     "llms.txt",
-    "docs"
+    "openapi",
+    "packaging"
   ],
   "scripts": {
     "build": "tsc && node scripts/build-info.mjs",

@@ -7,6 +7,7 @@ mcp-mail exposes an existing mailbox (any IMAP/SMTP provider, optional CalDAV ca
 ## Docs
 
 - [README](https://github.com/Annseraf/mcp-mail/blob/main/README.md): what it is, tools, comparison, FAQ
+- [Install and update](https://github.com/Annseraf/mcp-mail/blob/main/docs/INSTALL.md): one-line installer, signed releases, auto-update with rollback, Docker
 - [Client setup](https://github.com/Annseraf/mcp-mail/tree/main/docs/clients): Claude.ai, Claude Desktop/Code, ChatGPT, Cursor, VS Code, Meta Muse, generic
 - [Clients, OAuth, policies, audit](https://github.com/Annseraf/mcp-mail/blob/main/docs/CLIENTS.md)
 - [Compatibility with claude-mail-mcp](https://github.com/Annseraf/mcp-mail/blob/main/docs/COMPATIBILITY.md)

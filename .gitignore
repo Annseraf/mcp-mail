@@ -11,3 +11,4 @@ coverage/
 
 # Private planning docs (never commit)
 .plans/
+/release/

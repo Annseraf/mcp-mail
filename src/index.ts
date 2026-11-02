@@ -22,7 +22,7 @@ import { loadAuthSettings } from "./auth/settings.js";
 import { decryptValue, isEncrypted, loadKey, mapPasswords } from "./platform/local-secrets.js";
 import { buildInfo } from "./version.js";
 
-const VERSION = "0.2.1";
+const VERSION = buildInfo().version;
 
 // Loaded lazily so CLI commands don't require server env vars (AUTH_TOKEN).
 let config: typeof Config;
@@ -115,9 +115,19 @@ const cli = ["secrets", "clients", "audit"].includes(command);
 const run =
   command === "stdio"
     ? import("./stdio.js").then((m) => m.runStdio())
-    : cli
-      ? runCli(process.argv.slice(2)).then((code) => process.exit(code))
-      : main();
+    : command === "doctor"
+      ? import("./doctor.js").then((m) =>
+          m.runDoctor(process.argv.slice(3)).then((code) => process.exit(code)),
+        )
+      : command === "version"
+        ? Promise.resolve(console.log(JSON.stringify(buildInfo())))
+        : command === "update"
+          ? import("./update.js").then((m) =>
+              m.runUpdate(process.argv.slice(3)).then((code) => process.exit(code)),
+            )
+          : cli
+            ? runCli(process.argv.slice(2)).then((code) => process.exit(code))
+            : main();
 run.catch((err) => {
   console.error("Fatal startup error:", err);
   process.exit(1);

@@ -1,0 +1,42 @@
+# Installed by install.sh. Placeholders are filled in at install time.
+[Unit]
+Description=mcp-mail (email MCP server)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+Group=@USER@
+EnvironmentFile=@ENV_FILE@
+ExecStart=/usr/bin/env node --enable-source-maps @ROOT@/current/dist/index.js
+Restart=on-failure
+RestartSec=5
+MemoryMax=512M
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=@RW_PATHS@
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+CapabilityBoundingSet=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

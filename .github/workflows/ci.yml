@@ -17,8 +17,8 @@ jobs:
     name: Lint, format, typecheck, licenses
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -29,6 +29,10 @@ jobs:
       - run: npm run licenses
       - name: OpenAPI spec matches its generator
         run: npm run openapi && git diff --exit-code openapi/
+      - name: llms-full.txt is up to date
+        run: npm run docs && git diff --exit-code llms-full.txt
+      - name: ShellCheck installer and updater
+        run: shellcheck -S warning -x install.sh packaging/lib.sh packaging/mcp-mail-update scripts/pack-release.sh
 
   test:
     name: Test and build (Node ${{ matrix.node }})
@@ -38,8 +42,8 @@ jobs:
       matrix:
         node: [20, 22, 24]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
           cache: npm
@@ -62,8 +66,8 @@ jobs:
           - 3025:3025
           - 3143:3143
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -76,3 +80,90 @@ jobs:
           done
           echo "GreenMail did not start" >&2; exit 1
       - run: npm run test:compat
+
+  docker:
+    name: Docker image builds and serves /health
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build --build-arg BUILD_COMMIT=${{ github.sha }} -t mcp-mail:ci .
+      - run: |
+          docker run -d --name m -e AUTH_TOKEN=ci-token-123 -p 127.0.0.1:3220:3220 mcp-mail:ci
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:3220/health && exit 0; sleep 1; done
+          docker logs m; exit 1
+
+  installer:
+    name: Installer, auto-update, rollback and adoption (Ubuntu 24.04)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci && npm run build
+      - name: Package releases (current, patch, broken)
+        run: |
+          scripts/pack-release.sh /tmp/rel
+          VERSION_OVERRIDE=0.2.90 scripts/pack-release.sh /tmp/rel
+          VERSION_OVERRIDE=0.2.91 BREAK=1 scripts/pack-release.sh /tmp/rel
+          ls -la /tmp/rel
+      - name: Adopt an existing claude-mail-mcp v0.2.1 install
+        run: |
+          git worktree add /tmp/upstream v0.2.1
+          (cd /tmp/upstream && npm ci --silent && npm run build)
+          sudo useradd --system --no-create-home --shell /usr/sbin/nologin mailmcp
+          sudo install -d -m 700 -o mailmcp -g mailmcp /var/lib/mail-mcp
+          echo '{"version":1,"accounts":[]}' | sudo tee /var/lib/mail-mcp/accounts.json >/dev/null
+          sudo chown mailmcp /var/lib/mail-mcp/accounts.json
+          printf 'HOST=127.0.0.1\nPORT=3220\nAUTH_TOKEN=upstream-token-0123456789abcdef\nACCOUNTS_FILE=/var/lib/mail-mcp/accounts.json\n' | sudo tee /etc/claude-mail-mcp.env >/dev/null
+          sudo chmod 640 /etc/claude-mail-mcp.env && sudo chgrp mailmcp /etc/claude-mail-mcp.env
+          printf '[Service]\nUser=mailmcp\nEnvironmentFile=/etc/claude-mail-mcp.env\nExecStart=/usr/bin/node /tmp/upstream/dist/index.js\n[Install]\nWantedBy=multi-user.target\n' | sudo tee /etc/systemd/system/claude-mail-mcp.service >/dev/null
+          sudo systemctl daemon-reload && sudo systemctl enable --now claude-mail-mcp
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:3220/health && break; sleep 1; done
+          sudo MCP_MAIL_TARBALL=/tmp/rel/mcp-mail-v$(node -p 'require("./package.json").version').tar.gz MCP_MAIL_INSECURE_SKIP_VERIFY=1 ./install.sh --auto-update
+          systemctl is-active mcp-mail
+          ! systemctl is-enabled claude-mail-mcp
+          curl -fsS http://127.0.0.1:3220/health | grep -q '"status":"ok"'
+          # Same AUTH_TOKEN, same port, same accounts file: zero config changes.
+          curl -fsS http://127.0.0.1:3220/mcp -H 'authorization: Bearer upstream-token-0123456789abcdef' \
+            -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | grep -q list_accounts
+          systemctl is-enabled mcp-mail-update.timer
+          sudo mcp-mail doctor --no-connect
+      - name: Re-running the installer is idempotent
+        run: |
+          sudo MCP_MAIL_TARBALL=/tmp/rel/mcp-mail-v$(node -p 'require("./package.json").version').tar.gz MCP_MAIL_INSECURE_SKIP_VERIFY=1 ./install.sh
+          systemctl is-active mcp-mail
+          grep -q upstream-token-0123456789abcdef /etc/claude-mail-mcp.env
+      - name: Auto-update installs a patch release
+        run: |
+          sudo MCP_MAIL_TARBALL=/tmp/rel/mcp-mail-v0.2.90.tar.gz MCP_MAIL_INSECURE_SKIP_VERIFY=1 /opt/mcp-mail/bin/mcp-mail-update --version 0.2.90
+          test "$(basename "$(readlink -f /opt/mcp-mail/current)")" = 0.2.90
+          curl -fsS http://127.0.0.1:3220/health | grep -q '"version":"0.2.90"'
+      - name: A broken release is rolled back
+        run: |
+          ! sudo MCP_MAIL_TARBALL=/tmp/rel/mcp-mail-v0.2.91.tar.gz MCP_MAIL_INSECURE_SKIP_VERIFY=1 /opt/mcp-mail/bin/mcp-mail-update --version 0.2.91
+          test "$(basename "$(readlink -f /opt/mcp-mail/current)")" = 0.2.90
+          systemctl is-active mcp-mail
+          curl -fsS http://127.0.0.1:3220/health | grep -q '"version":"0.2.90"'
+          sudo grep -q "rolling back" /var/log/mcp-mail/update.log
+      - name: Uninstall keeps config and data
+        run: |
+          sudo ./install.sh --uninstall
+          ! systemctl is-active mcp-mail
+          test -f /etc/claude-mail-mcp.env && test -f /var/lib/mail-mcp/accounts.json
+          test ! -d /opt/mcp-mail
+      - name: Fresh install on a clean machine
+        run: |
+          sudo systemctl disable --now claude-mail-mcp
+          sudo rm /etc/systemd/system/claude-mail-mcp.service && sudo systemctl daemon-reload
+          sudo MCP_MAIL_TARBALL=/tmp/rel/mcp-mail-v$(node -p 'require("./package.json").version').tar.gz MCP_MAIL_INSECURE_SKIP_VERIFY=1 ./install.sh --port 3230
+          systemctl is-active mcp-mail
+          sudo test -f /etc/mcp-mail/mcp-mail.env
+          test "$(sudo stat -c '%a %U:%G' /etc/mcp-mail/mcp-mail.env)" = "640 root:mailmcp"
+          curl -fsS http://127.0.0.1:3230/health | grep -q '"status":"ok"'
+      - if: failure()
+        run: sudo journalctl -u mcp-mail -u claude-mail-mcp -n 80 --no-pager; sudo cat /var/log/mcp-mail/update.log || true
