@@ -291,6 +291,7 @@ export function createAdminApp(d: AdminDeps): Express {
       // Purge order: connections + cached credentials, secrets (incl. data key), audit, record.
       await p.runtime.drop(id);
       await p.secrets.purgeTenant(id);
+      await p.oauth?.purgeTenant(id);
       await p.audit.purgeTenant(id);
       await store().delete(id);
       p.config.invalidate(id);

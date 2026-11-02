@@ -22,6 +22,7 @@ import {
 import { StaticAccounts, type AccountsStore } from "./accounts.js";
 import type { ClientPool, PoolLike } from "./client-pool.js";
 import { OAuthServer } from "./auth/oauth.js";
+import { TenantOAuth } from "./auth/tenant-oauth.js";
 import { OverlayAccountSettings, type AccountSettingsWriter } from "./account-settings.js";
 import type { AuthSettings } from "./auth/settings.js";
 import { ClientsStore, type Identity } from "./policy/clients-file.js";
@@ -70,6 +71,8 @@ export interface EngineOptions {
 }
 
 export interface Platform {
+  /** Per-tenant OAuth servers (TENANT_OAUTH=true). */
+  oauth?: TenantOAuth;
   tenants?: FileTenantStore;
   config: ConfigProvider;
   secrets: SecretStore;
@@ -339,12 +342,23 @@ export async function createEngine(o: EngineOptions): Promise<Engine> {
         { settings },
       );
     });
+    if (o.platform.tenantOAuth) {
+      p.oauth = new TenantOAuth({
+        ...o.platform.tenantOAuth,
+        dataDir: path.join(o.platform.dataDir, "oauth"),
+        tenantBaseUrl: o.platform.tenantBaseUrl,
+        config: p.config,
+        log,
+      });
+      p.oauth.mount(app);
+    }
     app.post("/t/:tenantId/mcp", async (req, res) => {
       const match = /^Bearer\s+(.+)$/i.exec(req.header("authorization") ?? "");
       const tenantId = String(req.params.tenantId);
       let auth;
       try {
         auth = match ? await p.runtime.authenticate(tenantId, match[1]) : undefined;
+        if (!auth && match && p.oauth) auth = await p.oauth.authenticate(tenantId, match[1]);
       } catch (err) {
         log("error", "tenant lookup failed", {
           tenantId,
@@ -355,7 +369,10 @@ export async function createEngine(o: EngineOptions): Promise<Engine> {
       }
       if (!auth) {
         // Same answer for unknown tenants and bad tokens: nothing to enumerate.
-        res.set("WWW-Authenticate", 'Bearer error="invalid_token"');
+        res.set(
+          "WWW-Authenticate",
+          p.oauth ? p.oauth.challenge(tenantId) : 'Bearer error="invalid_token"',
+        );
         jsonError(res, 401, "unauthorized", "Missing or invalid Bearer token");
         return;
       }
