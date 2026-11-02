@@ -119,3 +119,22 @@ These are not vulnerabilities in this project, but operators should:
 - [ ] Subscribe to GitHub Security Advisories for this repo and the dependencies (`imapflow`, `nodemailer`, `tsdav`, `@modelcontextprotocol/sdk`).
 
 See [docs/HARDENING.md](docs/HARDENING.md) for the full operator checklist and threat-model walkthrough.
+
+## Prompt injection (mcp-mail)
+
+Anyone can email you, so every email body is untrusted input for the agent reading it. mcp-mail
+reduces the risk in layers:
+
+- **Fencing (default on):** bodies, previews and thread contents are wrapped in
+  `<untrusted_email_content>` delimiters with a note that the content is data, not instructions.
+  Delimiters inside a message are neutralized. Disable with `UNTRUSTED_FENCING=false`.
+- **Clean HTML:** HTML-only mail is converted to text with hidden elements (`display:none`,
+  zero-size or white-on-white text, `hidden`), scripts, styles and images (tracking pixels)
+  removed; links are shown as text with their target, so nothing is fetched automatically.
+- **Server instructions:** clients receive instructions to treat email as data and to confirm
+  sends and deletions with the user.
+- **Least privilege:** give agents only the capabilities they need (`clients.json` presets,
+  docs/CLIENTS.md). Sending can be limited by recipient allowlist and rate; permanent deletion
+  needs an explicit capability.
+
+None of this makes an agent immune: keep humans in the loop for sends and deletions.

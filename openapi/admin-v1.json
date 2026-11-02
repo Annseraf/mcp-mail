@@ -1398,6 +1398,10 @@
           "defaultFromName": {
             "type": ["string", "null"]
           },
+          "signature": {
+            "type": ["string", "null"],
+            "description": "Appended to sent mail and drafts"
+          },
           "draftsFolder": {
             "type": "string",
             "default": "Drafts"

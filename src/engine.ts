@@ -22,6 +22,7 @@ import {
 import { StaticAccounts, type AccountsStore } from "./accounts.js";
 import type { ClientPool, PoolLike } from "./client-pool.js";
 import { OAuthServer } from "./auth/oauth.js";
+import { OverlayAccountSettings, type AccountSettingsWriter } from "./account-settings.js";
 import type { AuthSettings } from "./auth/settings.js";
 import { ClientsStore, type Identity } from "./policy/clients-file.js";
 import { guardTools, type ClientPolicy } from "./policy/guard.js";
@@ -211,17 +212,28 @@ export async function createEngine(o: EngineOptions): Promise<Engine> {
     next();
   };
 
+  const accountSettings = o.store.overlayFile ? new OverlayAccountSettings(o.store) : undefined;
   const singleTenantServer = (authInfo?: AuthInfo): McpServer => {
     const policy = authInfo?.extra?.policy as ClientPolicy | undefined;
-    if (!policy || !authInfo?.extra?.guarded) return buildMcpServer(o.version, o.pool, o.store);
+    if (!policy || !authInfo?.extra?.guarded) {
+      return buildMcpServer(o.version, o.pool, o.store, undefined, { settings: accountSettings });
+    }
     const accounts = policy.accounts
       ? new StaticAccounts(o.store.list().filter((a) => policy.accounts!.includes(a.id)))
       : o.store;
     const pool: PoolLike = policy.accounts
       ? { for: (id?: string) => o.pool.for(accounts.resolve(id).id) }
       : o.pool;
-    return buildMcpServer(o.version, pool, accounts, (server) =>
-      guardTools(server, { policy, audit: audit ? { log: audit, tenantId: "local" } : undefined }),
+    return buildMcpServer(
+      o.version,
+      pool,
+      accounts,
+      (server) =>
+        guardTools(server, {
+          policy,
+          audit: audit ? { log: audit, tenantId: "local" } : undefined,
+        }),
+      { settings: accountSettings },
     );
   };
 
@@ -302,8 +314,29 @@ export async function createEngine(o: EngineOptions): Promise<Engine> {
     const p = platform;
     const tenantEndpoint = mcpEndpoint((authInfo) => {
       const ctx = authInfo?.extra?.tenant as TenantContext;
-      return buildMcpServer(o.version, ctx.pool, ctx.accounts, (server) =>
-        guardTenantTools(server, ctx, p.audit),
+      // Agents can change a mailbox's sender name and signature in the tenant record.
+      const settings: AccountSettingsWriter | undefined = p.tenants
+        ? {
+            update: async (accountId, patch) => {
+              const id = ctx.accounts.resolve(accountId).id;
+              await p.tenants!.update(ctx.tenant.id, (t) => {
+                const m = t.mailboxes.find((x) => x.id === id);
+                if (!m) throw new Error("Mailbox not found");
+                if (patch.fromName !== undefined)
+                  m.mail.defaultFromName = patch.fromName ?? undefined;
+                if (patch.signature !== undefined) m.mail.signature = patch.signature ?? undefined;
+              });
+              p.config.invalidate(ctx.tenant.id);
+              return id;
+            },
+          }
+        : undefined;
+      return buildMcpServer(
+        o.version,
+        ctx.pool,
+        ctx.accounts,
+        (server) => guardTenantTools(server, ctx, p.audit),
+        { settings },
       );
     });
     app.post("/t/:tenantId/mcp", async (req, res) => {

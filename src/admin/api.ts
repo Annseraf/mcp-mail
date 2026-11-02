@@ -64,6 +64,7 @@ const endpointPatch = endpointIn.partial();
 const mailIn = z.object({
   defaultFrom: z.string().min(3).max(320),
   defaultFromName: z.string().max(200).optional(),
+  signature: z.string().max(4000).optional(),
   draftsFolder: z.string().min(1).max(200).default("Drafts"),
   sentFolder: z.string().min(1).max(200).nullable().default("Sent"),
 });
@@ -152,7 +153,11 @@ const mailboxView = (m: MailboxRecord) => ({
   status: m.status,
   imap: { host: m.imap.host, port: m.imap.port, tls: m.imap.tls, user: m.imap.user },
   smtp: { host: m.smtp.host, port: m.smtp.port, tls: m.smtp.tls, user: m.smtp.user },
-  mail: { ...m.mail, defaultFromName: m.mail.defaultFromName ?? null },
+  mail: {
+    ...m.mail,
+    defaultFromName: m.mail.defaultFromName ?? null,
+    signature: m.mail.signature ?? null,
+  },
   caldav: m.caldav ? { url: m.caldav.url, user: m.caldav.user } : null,
   createdAt: m.createdAt,
 });

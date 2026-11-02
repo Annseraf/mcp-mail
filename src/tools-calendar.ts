@@ -38,7 +38,7 @@ function requireCaldav(pool: PoolLike, accountId?: string) {
   const clients = pool.for(accountId);
   if (!clients.caldav) {
     throw new Error(
-      `Account "${accountId ?? "(default)"}" has no CalDAV configured. Add a CalDAV URL in the connector's /settings page.`,
+      `No calendar (CalDAV) is connected to account "${accountId ?? "(default)"}". Ask the account owner to add a CalDAV URL to enable calendar tools.`,
     );
   }
   return clients.caldav;

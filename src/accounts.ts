@@ -59,6 +59,8 @@ export interface CalDavCreds {
 export interface MailDefaults {
   defaultFrom: string;
   defaultFromName?: string;
+  /** Appended to outgoing mail and drafts unless the call opts out. */
+  signature?: string;
   draftsFolder: string;
   sentFolder: string | null;
 }
@@ -108,6 +110,9 @@ export type PublicAccountSummary = {
   smtp_from: string;
   imap_host: string;
   caldav_enabled: boolean;
+  /** Additive in mcp-mail. */
+  from_name: string | null;
+  signature: string | null;
 };
 
 /**
@@ -163,6 +168,8 @@ export class StaticAccounts implements AccountSource {
       smtp_from: a.mail.defaultFrom,
       imap_host: a.imap.host,
       caldav_enabled: Boolean(a.caldav?.url),
+      from_name: a.mail.defaultFromName ?? null,
+      signature: a.mail.signature ?? null,
     }));
   }
 }
@@ -181,6 +188,8 @@ export class AccountsStore implements AccountSource {
   constructor(
     filePath: string,
     private readonly decrypt?: (doc: unknown) => void,
+    /** account-settings.json: per-account fromName/signature changes made through the API. */
+    readonly overlayFile?: string,
   ) {
     this.filePath = filePath;
   }
@@ -231,6 +240,7 @@ export class AccountsStore implements AccountSource {
     }
 
     const parsed = parseAccountsFile(raw, this.decrypt);
+    if (this.overlayFile) applyOverlay(parsed.accounts, await readOverlay(this.overlayFile));
     this.accounts = parsed.accounts;
     this.set = new StaticAccounts(parsed.accounts);
     if (this.onChange) {
@@ -399,6 +409,7 @@ function parseMail(raw: unknown, where: string): MailDefaults {
   return {
     defaultFrom: expectStr(o.defaultFrom, `${where}.defaultFrom`),
     defaultFromName: typeof o.defaultFromName === "string" ? o.defaultFromName : undefined,
+    signature: typeof o.signature === "string" && o.signature.length > 0 ? o.signature : undefined,
     draftsFolder:
       typeof o.draftsFolder === "string" && o.draftsFolder.length > 0 ? o.draftsFolder : "Drafts",
     sentFolder,
@@ -429,4 +440,29 @@ function expectInt(v: unknown, where: string): number {
     throw new AccountsStoreError(`${where} must be an integer 1-65535`);
   }
   return v;
+}
+
+/** account-settings.json: overrides that the server itself writes, so accounts.json is never rewritten. */
+export interface AccountOverlay {
+  version: 1;
+  accounts: Record<string, { fromName?: string | null; signature?: string | null }>;
+}
+
+export async function readOverlay(file: string): Promise<AccountOverlay> {
+  try {
+    const doc = JSON.parse(await fs.readFile(file, "utf8")) as AccountOverlay;
+    return doc && typeof doc.accounts === "object" ? doc : { version: 1, accounts: {} };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return { version: 1, accounts: {} };
+    throw err;
+  }
+}
+
+function applyOverlay(accounts: Account[], overlay: AccountOverlay): void {
+  for (const a of accounts) {
+    const o = overlay.accounts[a.id];
+    if (!o) continue;
+    if (o.fromName !== undefined) a.mail.defaultFromName = o.fromName ?? undefined;
+    if (o.signature !== undefined) a.mail.signature = o.signature ?? undefined;
+  }
 }

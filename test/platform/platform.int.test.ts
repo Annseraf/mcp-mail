@@ -418,6 +418,27 @@ describe("platform: multi-tenant mode and admin API", () => {
     expect((await res.json()).result.protocolVersion).toBe("2025-06-18");
   });
 
+  it("lets a tenant's agent set its mailbox signature, visible to the admin API", async () => {
+    const c = await admin("POST", `/tenants/${A}/clients`, {
+      id: "settings",
+      name: "Settings",
+      preset: "full-no-delete",
+    });
+    const r = await call(A, c.body.token, "update_account_settings", {
+      from_name: "Alice A",
+      signature: "Alice\nA Corp",
+    });
+    expect(r.isError ?? false).toBe(false);
+    const mb = (await admin("GET", `/tenants/${A}/mailboxes`)).body.mailboxes.find(
+      (m: { id: string }) => m.id === "main",
+    );
+    expect(mb.mail).toMatchObject({ defaultFromName: "Alice A", signature: "Alice\nA Corp" });
+    const readDraft = await call(A, tokenA, "list_accounts");
+    expect(JSON.parse(readDraft.content[0].text).accounts[0].signature).toBe("Alice\nA Corp");
+    expect(await toolNames(A, tokenA)).not.toContain("update_account_settings");
+    await admin("POST", `/tenants/${A}/clients/settings/revoke`);
+  });
+
   it("examples/admin-client.mjs works end to end", async () => {
     const { execFile } = await import("node:child_process");
     const out = await new Promise<string>((resolve, reject) =>

@@ -11,6 +11,7 @@
  * POST /t/<tenantId>/mcp; ADMIN_API=true serves /admin/v1 on a private
  * interface (ADMIN_HOST/ADMIN_PORT).
  */
+import path from "node:path";
 import type { config as Config } from "./config.js";
 import { AccountsStore } from "./accounts.js";
 import { runCli } from "./cli.js";
@@ -46,7 +47,12 @@ async function main(): Promise<void> {
       );
     };
   }
-  const store = new AccountsStore(config.accountsFile, decrypt);
+  const store = new AccountsStore(
+    config.accountsFile,
+    decrypt,
+    process.env.ACCOUNT_SETTINGS_FILE?.trim() ||
+      path.join(path.dirname(config.accountsFile), "account-settings.json"),
+  );
   const pool = new ClientPool(store);
   await store.start((next, prev) => {
     log("info", "accounts.json changed", {

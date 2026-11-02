@@ -79,6 +79,12 @@ remain valid when mcp-mail's built-in OAuth replaces it:
 
 ## Intentional deviations
 
-None so far. If a change can only be made by bending the contract, it is either put behind an
-opt-in flag or listed here with the reason and the maintainer's approval, and the gate's
-exception list says exactly what is allowed.
+Approved by the maintainer; the tool schemas and output fields stay compatible.
+
+| Change                                                                                                                                                                                      | Why                                                      | Opt out                   |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ------------------------- |
+| `delete_message` moves the message to Trash; permanent deletion needs `permanent: true` (and the `destructive` capability when a client policy applies)                                     | Reversible by default                                    | Pass `permanent: true`    |
+| Email bodies and previews are wrapped in `<untrusted_email_content>` delimiters, HTML-only mail is converted with hidden text and images removed, and outputs gain a `content_notice` field | Prompt-injection hygiene ([SECURITY.md](../SECURITY.md)) | `UNTRUSTED_FENCING=false` |
+| Calendar tools say "No calendar (CalDAV) is connected…" instead of pointing to a `/settings` page                                                                                           | The old text referred to a UI this project doesn't ship  | none                      |
+
+Everything else is additive: new optional parameters, new tools, new output fields.
