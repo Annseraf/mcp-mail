@@ -129,7 +129,7 @@ run install -d -m 750 -o "$SVC_USER" -g "$SVC_USER" /var/log/mcp-mail
 run install -d -m 755 "$ROOT" "$ROOT/releases" "$ROOT/bin"
 tmp_lib="$(mktemp)"
 if [ -n "${MCP_MAIL_TARBALL:-}" ]; then
-  tar -xzf "$MCP_MAIL_TARBALL" -O "$(tar -tzf "$MCP_MAIL_TARBALL" | head -n1 | cut -d/ -f1)/packaging/lib.sh" >"$tmp_lib"
+  tar -xzf "$MCP_MAIL_TARBALL" -O "$(tar -tzf "$MCP_MAIL_TARBALL" | sed -n '1s#/.*##p')/packaging/lib.sh" >"$tmp_lib"
 else
   curl -fsSL "https://raw.githubusercontent.com/${REPO}/main/packaging/lib.sh" -o "$tmp_lib"
 fi
@@ -137,7 +137,8 @@ fi
 . "$tmp_lib"
 if [ -z "$version" ]; then
   if [ -n "${MCP_MAIL_TARBALL:-}" ]; then
-    top="$(tar -tzf "$MCP_MAIL_TARBALL" | head -n1 | cut -d/ -f1)"
+    # Read the whole listing (head would SIGPIPE tar under pipefail).
+    top="$(tar -tzf "$MCP_MAIL_TARBALL" | sed -n '1s#/.*##p')"
     version="$(tar -xzf "$MCP_MAIL_TARBALL" -O "${top}/package.json" | sed -n 's/^  "version": "\(.*\)",$/\1/p' | head -n1)"
   else
     version="$(latest_version "")"

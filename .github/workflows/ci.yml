@@ -120,9 +120,10 @@ jobs:
           sudo chown mailmcp /var/lib/mail-mcp/accounts.json
           printf 'HOST=127.0.0.1\nPORT=3220\nAUTH_TOKEN=upstream-token-0123456789abcdef\nACCOUNTS_FILE=/var/lib/mail-mcp/accounts.json\n' | sudo tee /etc/claude-mail-mcp.env >/dev/null
           sudo chmod 640 /etc/claude-mail-mcp.env && sudo chgrp mailmcp /etc/claude-mail-mcp.env
-          printf '[Service]\nUser=mailmcp\nEnvironmentFile=/etc/claude-mail-mcp.env\nExecStart=/usr/bin/node /tmp/upstream/dist/index.js\n[Install]\nWantedBy=multi-user.target\n' | sudo tee /etc/systemd/system/claude-mail-mcp.service >/dev/null
+          printf '[Service]\nUser=mailmcp\nEnvironmentFile=/etc/claude-mail-mcp.env\nExecStart=/usr/bin/env node /tmp/upstream/dist/index.js\n[Install]\nWantedBy=multi-user.target\n' | sudo tee /etc/systemd/system/claude-mail-mcp.service >/dev/null
           sudo systemctl daemon-reload && sudo systemctl enable --now claude-mail-mcp
           for i in $(seq 1 20); do curl -fsS http://127.0.0.1:3220/health && break; sleep 1; done
+          curl -fsS http://127.0.0.1:3220/health | grep -q '"version":"0.2.1"'   # upstream really runs first
           sudo MCP_MAIL_TARBALL=/tmp/rel/mcp-mail-v$(node -p 'require("./package.json").version').tar.gz MCP_MAIL_INSECURE_SKIP_VERIFY=1 ./install.sh --auto-update
           systemctl is-active mcp-mail
           test -d "/opt/mcp-mail/releases/$(node -p 'require("./package.json").version')"
