@@ -8,9 +8,18 @@
       "include-v-in-tag": true,
       "release-as": "1.0.0",
       "extra-files": [
-        { "type": "json", "path": "server.json", "jsonpath": "$.version" },
-        { "type": "json", "path": "server.json", "jsonpath": "$.packages[0].version" }
-      ]
+        {
+          "type": "json",
+          "path": "server.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
+          "path": "server.json",
+          "jsonpath": "$.packages[0].version"
+        }
+      ],
+      "include-component-in-tag": false
     }
   }
 }
