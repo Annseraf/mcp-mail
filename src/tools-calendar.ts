@@ -9,8 +9,9 @@
  * All times are ISO 8601 with timezone offset (e.g. 2026-05-22T09:00:00+02:00).
  */
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { email } from "./schemas.js";
 import { ClientPool } from "./client-pool.js";
 
 function asJson(value: unknown): { content: { type: "text"; text: string }[] } {
@@ -49,9 +50,9 @@ export function registerCalendarTools(server: McpServer, pool: ClientPool): void
     {
       description:
         "List all CalDAV calendars on the configured account. Returns URL (used as `calendar_url` in other tools), display name, timezone, and supported components. Errors if the resolved account has no CalDAV configured.",
-      inputSchema: {
+      inputSchema: z.object({
         account: accountSchema,
-      },
+      }),
     },
     async ({ account }) => {
       const caldav = requireCaldav(pool, account);
@@ -64,12 +65,12 @@ export function registerCalendarTools(server: McpServer, pool: ClientPool): void
     {
       description:
         "List events in a calendar between two timestamps. Recurring events are expanded into individual instances.",
-      inputSchema: {
+      inputSchema: z.object({
         calendar_url: z.string().url().describe("Calendar URL as returned by list_calendars"),
         start: isoDateTime.describe("Window start (inclusive)"),
         end: isoDateTime.describe("Window end (exclusive)"),
         account: accountSchema,
-      },
+      }),
     },
     async ({ calendar_url, start, end, account }) => {
       const caldav = requireCaldav(pool, account);
@@ -83,7 +84,7 @@ export function registerCalendarTools(server: McpServer, pool: ClientPool): void
     {
       description:
         "Create a new calendar event. WRITE OPERATION. Use all_day=true for date-only events (start/end should then be YYYY-MM-DD; end is exclusive — for a one-day event set end to the day after).",
-      inputSchema: {
+      inputSchema: z.object({
         calendar_url: z.string().url().describe("Calendar URL as returned by list_calendars"),
         summary: z.string().min(1).describe("Event title"),
         start: isoDateTime,
@@ -92,13 +93,13 @@ export function registerCalendarTools(server: McpServer, pool: ClientPool): void
         description: z.string().optional(),
         location: z.string().optional(),
         attendees: z
-          .array(z.string().email())
+          .array(email())
           .optional()
           .describe(
             "Email addresses of attendees. Note: CalDAV does NOT send invitations on its own — most servers expect the client to mail the iMIP invite separately.",
           ),
         account: accountSchema,
-      },
+      }),
     },
     async (args) => {
       const caldav = requireCaldav(pool, args.account);
@@ -121,7 +122,7 @@ export function registerCalendarTools(server: McpServer, pool: ClientPool): void
     {
       description:
         "Find free time slots across one or more calendars in a window. Returns continuous gaps long enough to fit `duration_minutes`. Optional working hours restrict the search to a daily window (in UTC; pass start/end already in your local TZ if you want local-time anchoring).",
-      inputSchema: {
+      inputSchema: z.object({
         calendar_urls: z
           .array(z.string().url())
           .min(1)
@@ -142,7 +143,7 @@ export function registerCalendarTools(server: McpServer, pool: ClientPool): void
           .optional()
           .describe("Restrict slots to this daily UTC window (e.g. 8–18 for 09:00–19:00 in CEST)"),
         account: accountSchema,
-      },
+      }),
     },
     async (args) => {
       const caldav = requireCaldav(pool, args.account);

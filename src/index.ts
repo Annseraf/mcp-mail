@@ -14,8 +14,8 @@
 
 import { timingSafeEqual } from "node:crypto";
 import express, { NextFunction, Request, Response } from "express";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
+import { toNodeHandler } from "@modelcontextprotocol/node";
 
 import { config } from "./config.js";
 import { AccountsStore } from "./accounts.js";
@@ -85,8 +85,9 @@ async function main(): Promise<void> {
     ids: store.ids(),
   });
 
-  // One McpServer per request: a Protocol instance can only be connected to
-  // one transport at a time, so a shared instance rejects concurrent requests.
+  // createMcpHandler builds one McpServer per request and serves both
+  // 2026-07-28 (stateless, per-request _meta) clients and 2025-era clients
+  // that start with `initialize` (stateless legacy fallback).
   const createMcpServer = (): McpServer => {
     const mcp = new McpServer({
       name: "claude-mail-mcp",
@@ -112,20 +113,9 @@ async function main(): Promise<void> {
     });
   });
 
-  app.post("/mcp", bearerAuth, async (req, res) => {
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-      enableJsonResponse: true,
-    });
-    const mcp = createMcpServer();
-    res.on("close", () => {
-      transport.close().catch(() => {});
-      mcp.close().catch(() => {});
-    });
-    try {
-      await mcp.connect(transport);
-      await transport.handleRequest(req, res, req.body);
-    } catch (err) {
+  const mcpHandler = toNodeHandler(createMcpHandler(createMcpServer, { responseMode: "json" }));
+  app.post("/mcp", bearerAuth, (req, res) => {
+    mcpHandler(req, res, req.body).catch((err: unknown) => {
       log("error", "MCP request failed", {
         error: err instanceof Error ? err.message : String(err),
       });
@@ -135,7 +125,7 @@ async function main(): Promise<void> {
           message: err instanceof Error ? err.message : "Unknown error",
         });
       }
-    }
+    });
   });
 
   app.use((req, res) => {

@@ -178,6 +178,37 @@ export async function legacySession(
   return (method, params) => server.rpc(method, params, { protocolVersion });
 }
 
+export const MODERN_VERSION = "2026-07-28";
+
+/**
+ * 2026-07-28 client: no handshake; every request carries its protocol
+ * version, capabilities and client info in `_meta`, mirrored in headers.
+ */
+export function modernSession(
+  server: RunningServer,
+): (method: string, params?: object, headers?: Record<string, string>) => Promise<RpcResult> {
+  return (method, params = {}, headers = {}) => {
+    const p = params as { name?: string; uri?: string; _meta?: object };
+    const name = p.name ?? p.uri;
+    return server.rpc(
+      method,
+      {
+        ...p,
+        _meta: {
+          ...p._meta,
+          "io.modelcontextprotocol/protocolVersion": MODERN_VERSION,
+          "io.modelcontextprotocol/clientCapabilities": {},
+          "io.modelcontextprotocol/clientInfo": { name: "mcp-mail-compat", version: "0.0.0" },
+        },
+      },
+      {
+        protocolVersion: MODERN_VERSION,
+        headers: { "mcp-method": method, ...(name ? { "mcp-name": name } : {}), ...headers },
+      },
+    );
+  };
+}
+
 /** Reset both GreenMail mailboxes to a known state: folders exist, all empty, two messages in alice's INBOX. */
 export async function seedMail(): Promise<void> {
   for (const user of Object.values(mail.users)) {
