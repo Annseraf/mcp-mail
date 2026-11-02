@@ -1,0 +1,554 @@
+[
+  {
+    "name": "list_accounts",
+    "description": "List all configured mailbox accounts on this connector. Returns id, label, default flag, From-address and CalDAV-enabled flag — never credentials. Use the `id` value as the `account` parameter on other tools.",
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "properties": {}
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "list_folders",
+    "description": "List all IMAP mailboxes (folders) on the configured account. Returns path, name, flags and special-use attribute (e.g. \\Sent, \\Drafts, \\Trash) — useful for picking the right `mailbox` parameter for other tools.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "account": {
+          "type": "string",
+          "description": "Account ID (from list_accounts) to act on. Omit to use the default account."
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "list_messages",
+    "description": "List the newest messages in a mailbox (newest first). Returns headers + a short preview, NOT the full body — use get_message for the body.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "mailbox": {
+          "type": "string",
+          "description": "IMAP folder path (e.g. 'INBOX', 'Sent', 'Archive/2026')"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "description": "Max messages to return (default 25)"
+        },
+        "unread_only": {
+          "type": "boolean",
+          "description": "Return only unread messages"
+        },
+        "account": {
+          "type": "string",
+          "description": "Account ID (from list_accounts) to act on. Omit to use the default account."
+        }
+      },
+      "required": ["mailbox"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "search_messages",
+    "description": "Server-side IMAP SEARCH across one mailbox. Combine any criteria (AND-style). Dates must be ISO YYYY-MM-DD. Returns headers + short preview — use get_message for the body.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "mailbox": {
+          "type": "string",
+          "description": "IMAP folder path to search in"
+        },
+        "from": {
+          "type": "string",
+          "description": "Substring match in From: header"
+        },
+        "to": {
+          "type": "string",
+          "description": "Substring match in To: header"
+        },
+        "subject": {
+          "type": "string",
+          "description": "Substring match in Subject:"
+        },
+        "body": {
+          "type": "string",
+          "description": "Substring match in the message body"
+        },
+        "since": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "Match messages on/after this date (YYYY-MM-DD)"
+        },
+        "before": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "Match messages strictly before this date (YYYY-MM-DD)"
+        },
+        "unread": {
+          "type": "boolean",
+          "description": "true = unread only, false = read only"
+        },
+        "flagged": {
+          "type": "boolean",
+          "description": "true = flagged only, false = unflagged only"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "account": {
+          "type": "string",
+          "description": "Account ID (from list_accounts) to act on. Omit to use the default account."
+        }
+      },
+      "required": ["mailbox"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "get_message",
+    "description": "Fetch one message by UID. Returns headers, full text+HTML body, attachment metadata (filenames + content types, NOT raw bytes), and threading IDs (Message-ID, In-Reply-To, References) for replies.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "mailbox": {
+          "type": "string",
+          "description": "IMAP folder the message lives in"
+        },
+        "uid": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "Message UID as returned by list_messages/search_messages"
+        },
+        "account": {
+          "type": "string",
+          "description": "Account ID (from list_accounts) to act on. Omit to use the default account."
+        }
+      },
+      "required": ["mailbox", "uid"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "send_message",
+    "description": "Send an email via SMTP. WRITE OPERATION — the message goes out immediately. Use create_draft instead if you want to review before sending. Saves a copy in the Sent folder if configured. For replies, pass in_reply_to + references from the original get_message result.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          ],
+          "description": "Recipient(s). String or array of email addresses."
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Subject line"
+        },
+        "text": {
+          "type": "string",
+          "description": "Plain-text body"
+        },
+        "html": {
+          "type": "string",
+          "description": "HTML body"
+        },
+        "cc": {
+          "anyOf": [
+            {
+              "$ref": "#/properties/to/anyOf/0"
+            },
+            {
+              "$ref": "#/properties/to/anyOf/1"
+            }
+          ]
+        },
+        "bcc": {
+          "$ref": "#/properties/cc"
+        },
+        "reply_to": {
+          "type": "string",
+          "description": "Reply-To header"
+        },
+        "in_reply_to": {
+          "type": "string",
+          "description": "Message-ID being replied to (for threading)"
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "References header values (for threading)"
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "filename": {
+                "type": "string"
+              },
+              "content_base64": {
+                "type": "string"
+              },
+              "content_type": {
+                "type": "string"
+              }
+            },
+            "required": ["filename", "content_base64"],
+            "additionalProperties": false
+          }
+        },
+        "account": {
+          "type": "string",
+          "description": "Account ID (from list_accounts) to act on. Omit to use the default account."
+        }
+      },
+      "required": ["to", "subject"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "create_draft",
+    "description": "Build an RFC-822 message and APPEND it to the Drafts folder. Does NOT send. Use for compose-and-review flows where the user wants to edit in their mail client before sending.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          ]
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string"
+        },
+        "html": {
+          "type": "string"
+        },
+        "cc": {
+          "$ref": "#/properties/to"
+        },
+        "bcc": {
+          "$ref": "#/properties/to"
+        },
+        "in_reply_to": {
+          "type": "string"
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "account": {
+          "type": "string",
+          "description": "Account ID (from list_accounts) to act on. Omit to use the default account."
+        }
+      },
+      "required": ["to", "subject"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "mark_read",
+    "description": "Set or clear the \\Seen flag on a message. WRITE OPERATION but easily reversible.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "mailbox": {
+          "type": "string"
+        },
+        "uid": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "read": {
+          "type": "boolean",
+          "description": "true = mark as read, false = mark unread"
+        },
+        "account": {
+          "type": "string",
+          "description": "Account ID (from list_accounts) to act on. Omit to use the default account."
+        }
+      },
+      "required": ["mailbox", "uid", "read"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "move_message",
+    "description": "Move a message from one mailbox to another (e.g. Inbox → Archive). WRITE OPERATION.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "source_mailbox": {
+          "type": "string"
+        },
+        "uid": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "destination_mailbox": {
+          "type": "string"
+        },
+        "account": {
+          "type": "string",
+          "description": "Account ID (from list_accounts) to act on. Omit to use the default account."
+        }
+      },
+      "required": ["source_mailbox", "uid", "destination_mailbox"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "delete_message",
+    "description": "Delete a message. DESTRUCTIVE — most IMAP servers move it to Trash but some EXPUNGE immediately. Prefer move_message to a Trash folder for reversibility.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "mailbox": {
+          "type": "string"
+        },
+        "uid": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "account": {
+          "type": "string",
+          "description": "Account ID (from list_accounts) to act on. Omit to use the default account."
+        }
+      },
+      "required": ["mailbox", "uid"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "list_calendars",
+    "description": "List all CalDAV calendars on the configured account. Returns URL (used as `calendar_url` in other tools), display name, timezone, and supported components. Errors if the resolved account has no CalDAV configured.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "account": {
+          "type": "string",
+          "description": "Account ID (from list_accounts) to act on. Omit to use the default account."
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "list_events",
+    "description": "List events in a calendar between two timestamps. Recurring events are expanded into individual instances.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "calendar_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Calendar URL as returned by list_calendars"
+        },
+        "start": {
+          "type": "string",
+          "description": "Window start (inclusive)"
+        },
+        "end": {
+          "type": "string",
+          "description": "Window end (exclusive)"
+        },
+        "account": {
+          "type": "string",
+          "description": "Account ID (from list_accounts) to act on. Omit to use the default account."
+        }
+      },
+      "required": ["calendar_url", "start", "end"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "create_event",
+    "description": "Create a new calendar event. WRITE OPERATION. Use all_day=true for date-only events (start/end should then be YYYY-MM-DD; end is exclusive — for a one-day event set end to the day after).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "calendar_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Calendar URL as returned by list_calendars"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Event title"
+        },
+        "start": {
+          "type": "string",
+          "description": "ISO 8601 datetime with timezone offset, e.g. 2026-05-22T09:00:00+02:00"
+        },
+        "end": {
+          "$ref": "#/properties/start"
+        },
+        "all_day": {
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "attendees": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "email"
+          },
+          "description": "Email addresses of attendees. Note: CalDAV does NOT send invitations on its own — most servers expect the client to mail the iMIP invite separately."
+        },
+        "account": {
+          "type": "string",
+          "description": "Account ID (from list_accounts) to act on. Omit to use the default account."
+        }
+      },
+      "required": ["calendar_url", "summary", "start", "end"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "find_free_slot",
+    "description": "Find free time slots across one or more calendars in a window. Returns continuous gaps long enough to fit `duration_minutes`. Optional working hours restrict the search to a daily window (in UTC; pass start/end already in your local TZ if you want local-time anchoring).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "calendar_urls": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          },
+          "minItems": 1,
+          "description": "One or more calendar URLs to consider busy"
+        },
+        "range_start": {
+          "type": "string",
+          "description": "ISO 8601 datetime with timezone offset, e.g. 2026-05-22T09:00:00+02:00"
+        },
+        "range_end": {
+          "$ref": "#/properties/range_start"
+        },
+        "duration_minutes": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 1440,
+          "description": "Minimum slot length in minutes"
+        },
+        "working_hours": {
+          "type": "object",
+          "properties": {
+            "start_hour": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 23
+            },
+            "end_hour": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 24
+            }
+          },
+          "required": ["start_hour", "end_hour"],
+          "additionalProperties": false,
+          "description": "Restrict slots to this daily UTC window (e.g. 8–18 for 09:00–19:00 in CEST)"
+        },
+        "account": {
+          "type": "string",
+          "description": "Account ID (from list_accounts) to act on. Omit to use the default account."
+        }
+      },
+      "required": ["calendar_urls", "range_start", "range_end", "duration_minutes"],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  }
+]

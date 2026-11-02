@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "accounts": [
+    {
+      "id": "main",
+      "label": "Main",
+      "default": true,
+      "imap": {
+        "host": "imap.example.com",
+        "port": 993,
+        "user": "you@example.com",
+        "pass": "secret-main",
+        "tls": true
+      },
+      "smtp": {
+        "host": "smtp.example.com",
+        "port": 587,
+        "user": "you@example.com",
+        "pass": "secret-main",
+        "tls": false
+      },
+      "mail": {
+        "defaultFrom": "you@example.com",
+        "defaultFromName": "You Example",
+        "draftsFolder": "Drafts",
+        "sentFolder": "Sent"
+      },
+      "caldav": {
+        "url": "https://dav.example.com/",
+        "user": "you@example.com",
+        "pass": "secret-dav"
+      }
+    },
+    {
+      "id": "work_2",
+      "label": "Work",
+      "imap": {
+        "host": "imap.example.org",
+        "port": 143,
+        "user": "me@example.org",
+        "pass": "secret-work",
+        "tls": false
+      },
+      "smtp": {
+        "host": "smtp.example.org",
+        "port": 465,
+        "user": "me@example.org",
+        "pass": "secret-work",
+        "tls": true
+      },
+      "mail": {
+        "defaultFrom": "me@example.org",
+        "draftsFolder": "INBOX.Drafts",
+        "sentFolder": null
+      },
+      "x-future-field": { "kept": true }
+    }
+  ],
+  "x-top-level-extension": "ignored by v0.2.1"
+}

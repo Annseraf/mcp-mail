@@ -1,0 +1,334 @@
+[
+  {
+    "step": "list_accounts",
+    "tool": "list_accounts",
+    "isError": false,
+    "shape": {
+      "$": ["object"],
+      "$.accounts": ["array"],
+      "$.accounts[]": ["object"],
+      "$.accounts[].caldav_enabled": ["boolean"],
+      "$.accounts[].default": ["boolean"],
+      "$.accounts[].id": ["string"],
+      "$.accounts[].imap_host": ["string"],
+      "$.accounts[].label": ["string"],
+      "$.accounts[].smtp_from": ["string"],
+      "$.count": ["number"]
+    }
+  },
+  {
+    "step": "list_folders",
+    "tool": "list_folders",
+    "isError": false,
+    "shape": {
+      "$": ["array"],
+      "$[]": ["object"],
+      "$[].delimiter": ["string"],
+      "$[].flags": ["array"],
+      "$[].listed": ["boolean"],
+      "$[].name": ["string"],
+      "$[].path": ["string"],
+      "$[].specialUse": ["string"],
+      "$[].subscribed": ["boolean"]
+    }
+  },
+  {
+    "step": "list_messages INBOX",
+    "tool": "list_messages",
+    "isError": false,
+    "shape": {
+      "$": ["object"],
+      "$.account": ["string"],
+      "$.count": ["number"],
+      "$.mailbox": ["string"],
+      "$.messages": ["array"],
+      "$.messages[]": ["object"],
+      "$.messages[].cc": ["null"],
+      "$.messages[].date": ["string"],
+      "$.messages[].flags": ["array"],
+      "$.messages[].from": ["string"],
+      "$.messages[].preview": ["string"],
+      "$.messages[].seq": ["number"],
+      "$.messages[].size": ["number"],
+      "$.messages[].subject": ["string"],
+      "$.messages[].to": ["string"],
+      "$.messages[].uid": ["number"]
+    }
+  },
+  {
+    "step": "list_messages INBOX unread_only",
+    "tool": "list_messages",
+    "isError": false,
+    "shape": {
+      "$": ["object"],
+      "$.account": ["string"],
+      "$.count": ["number"],
+      "$.mailbox": ["string"],
+      "$.messages": ["array"],
+      "$.messages[]": ["object"],
+      "$.messages[].cc": ["null"],
+      "$.messages[].date": ["string"],
+      "$.messages[].flags": ["array"],
+      "$.messages[].from": ["string"],
+      "$.messages[].preview": ["string"],
+      "$.messages[].seq": ["number"],
+      "$.messages[].size": ["number"],
+      "$.messages[].subject": ["string"],
+      "$.messages[].to": ["string"],
+      "$.messages[].uid": ["number"]
+    }
+  },
+  {
+    "step": "search_messages subject",
+    "tool": "search_messages",
+    "isError": false,
+    "shape": {
+      "$": ["object"],
+      "$.account": ["string"],
+      "$.count": ["number"],
+      "$.mailbox": ["string"],
+      "$.messages": ["array"],
+      "$.messages[]": ["object"],
+      "$.messages[].cc": ["null"],
+      "$.messages[].date": ["string"],
+      "$.messages[].flags": ["array"],
+      "$.messages[].from": ["string"],
+      "$.messages[].preview": ["string"],
+      "$.messages[].seq": ["number"],
+      "$.messages[].size": ["number"],
+      "$.messages[].subject": ["string"],
+      "$.messages[].to": ["string"],
+      "$.messages[].uid": ["number"]
+    }
+  },
+  {
+    "step": "search_messages from+since",
+    "tool": "search_messages",
+    "isError": false,
+    "shape": {
+      "$": ["object"],
+      "$.account": ["string"],
+      "$.count": ["number"],
+      "$.mailbox": ["string"],
+      "$.messages": ["array"],
+      "$.messages[]": ["object"],
+      "$.messages[].cc": ["null"],
+      "$.messages[].date": ["string"],
+      "$.messages[].flags": ["array"],
+      "$.messages[].from": ["string"],
+      "$.messages[].preview": ["string"],
+      "$.messages[].seq": ["number"],
+      "$.messages[].size": ["number"],
+      "$.messages[].subject": ["string"],
+      "$.messages[].to": ["string"],
+      "$.messages[].uid": ["number"]
+    }
+  },
+  {
+    "step": "get_message with attachment",
+    "tool": "get_message",
+    "isError": false,
+    "shape": {
+      "$": ["object"],
+      "$.attachments": ["array"],
+      "$.attachments[]": ["object"],
+      "$.attachments[].contentId": ["null"],
+      "$.attachments[].contentType": ["string"],
+      "$.attachments[].filename": ["string"],
+      "$.attachments[].size": ["number"],
+      "$.bodyHtml": ["null"],
+      "$.bodyText": ["string"],
+      "$.cc": ["null"],
+      "$.date": ["string"],
+      "$.flags": ["array"],
+      "$.from": ["string"],
+      "$.inReplyTo": ["null"],
+      "$.messageId": ["string"],
+      "$.preview": ["string"],
+      "$.references": ["array"],
+      "$.seq": ["number"],
+      "$.size": ["number"],
+      "$.subject": ["string"],
+      "$.to": ["string"],
+      "$.uid": ["number"]
+    }
+  },
+  {
+    "step": "get_message html",
+    "tool": "get_message",
+    "isError": false,
+    "shape": {
+      "$": ["object"],
+      "$.attachments": ["array"],
+      "$.bodyHtml": ["string"],
+      "$.bodyText": ["string"],
+      "$.cc": ["null"],
+      "$.date": ["string"],
+      "$.flags": ["array"],
+      "$.from": ["string"],
+      "$.inReplyTo": ["null"],
+      "$.messageId": ["string"],
+      "$.preview": ["string"],
+      "$.references": ["array"],
+      "$.seq": ["number"],
+      "$.size": ["number"],
+      "$.subject": ["string"],
+      "$.to": ["string"],
+      "$.uid": ["number"]
+    }
+  },
+  {
+    "step": "get_message unknown uid",
+    "tool": "get_message",
+    "isError": true,
+    "shape": {
+      "$": ["string"]
+    }
+  },
+  {
+    "step": "create_draft",
+    "tool": "create_draft",
+    "isError": false,
+    "shape": {
+      "$": ["object"],
+      "$.bytes": ["number"],
+      "$.folder": ["string"],
+      "$.success": ["boolean"]
+    }
+  },
+  {
+    "step": "send_message",
+    "tool": "send_message",
+    "isError": false,
+    "shape": {
+      "$": ["object"],
+      "$.accepted": ["array"],
+      "$.accepted[]": ["string"],
+      "$.messageId": ["string"],
+      "$.rejected": ["array"],
+      "$.response": ["string"],
+      "$.saved_to_sent": ["boolean"]
+    }
+  },
+  {
+    "step": "mark_read",
+    "tool": "mark_read",
+    "isError": false,
+    "shape": {
+      "$": ["object"],
+      "$.mailbox": ["string"],
+      "$.read": ["boolean"],
+      "$.success": ["boolean"],
+      "$.uid": ["number"]
+    }
+  },
+  {
+    "step": "move_message",
+    "tool": "move_message",
+    "isError": false,
+    "shape": {
+      "$": ["object"],
+      "$.from": ["string"],
+      "$.success": ["boolean"],
+      "$.to": ["string"],
+      "$.uid": ["number"]
+    }
+  },
+  {
+    "step": "list_messages Archive",
+    "tool": "list_messages",
+    "isError": false,
+    "shape": {
+      "$": ["object"],
+      "$.account": ["string"],
+      "$.count": ["number"],
+      "$.mailbox": ["string"],
+      "$.messages": ["array"],
+      "$.messages[]": ["object"],
+      "$.messages[].cc": ["null"],
+      "$.messages[].date": ["string"],
+      "$.messages[].flags": ["array"],
+      "$.messages[].from": ["string"],
+      "$.messages[].preview": ["string"],
+      "$.messages[].seq": ["number"],
+      "$.messages[].size": ["number"],
+      "$.messages[].subject": ["string"],
+      "$.messages[].to": ["string"],
+      "$.messages[].uid": ["number"]
+    }
+  },
+  {
+    "step": "delete_message",
+    "tool": "delete_message",
+    "isError": false,
+    "shape": {
+      "$": ["object"],
+      "$.mailbox": ["string"],
+      "$.success": ["boolean"],
+      "$.uid": ["number"]
+    }
+  },
+  {
+    "step": "list_messages work INBOX",
+    "tool": "list_messages",
+    "isError": false,
+    "shape": {
+      "$": ["object"],
+      "$.account": ["string"],
+      "$.count": ["number"],
+      "$.mailbox": ["string"],
+      "$.messages": ["array"],
+      "$.messages[]": ["object"],
+      "$.messages[].cc": ["null"],
+      "$.messages[].date": ["string"],
+      "$.messages[].flags": ["array"],
+      "$.messages[].from": ["string"],
+      "$.messages[].preview": ["string"],
+      "$.messages[].seq": ["number"],
+      "$.messages[].size": ["number"],
+      "$.messages[].subject": ["string"],
+      "$.messages[].to": ["string"],
+      "$.messages[].uid": ["number"]
+    }
+  },
+  {
+    "step": "list_messages unknown account",
+    "tool": "list_messages",
+    "isError": true,
+    "shape": {
+      "$": ["string"]
+    }
+  },
+  {
+    "step": "list_calendars without caldav",
+    "tool": "list_calendars",
+    "isError": true,
+    "shape": {
+      "$": ["string"]
+    }
+  },
+  {
+    "step": "list_events without caldav",
+    "tool": "list_events",
+    "isError": true,
+    "shape": {
+      "$": ["string"]
+    }
+  },
+  {
+    "step": "create_event without caldav",
+    "tool": "create_event",
+    "isError": true,
+    "shape": {
+      "$": ["string"]
+    }
+  },
+  {
+    "step": "find_free_slot without caldav",
+    "tool": "find_free_slot",
+    "isError": true,
+    "shape": {
+      "$": ["string"]
+    }
+  }
+]

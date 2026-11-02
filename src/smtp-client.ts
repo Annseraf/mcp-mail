@@ -65,7 +65,7 @@ export class SmtpClient {
       messageId: info.messageId,
       accepted: (info.accepted ?? []).map(String),
       rejected: (info.rejected ?? []).map(String),
-      response: info.response,
+      response: info.response ?? "",
     };
   }
 
