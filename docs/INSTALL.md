@@ -75,4 +75,4 @@ Images are multi-arch (amd64, arm64) with provenance attestations
 
 ## Local clients
 
-`npx -y mcp-mail stdio`; see [clients/claude-desktop-code.md](clients/claude-desktop-code.md).
+`npx -y @annseraf/mcp-mail stdio`; see [clients/claude-desktop-code.md](clients/claude-desktop-code.md).

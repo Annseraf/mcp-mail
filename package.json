@@ -1,5 +1,5 @@
 {
-  "name": "mcp-mail",
+  "name": "@annseraf/mcp-mail",
   "version": "1.0.0",
   "description": "Self-hosted IMAP/SMTP email MCP server for Claude, ChatGPT, Cursor and any MCP client, with per-client permissions, audit log and one-line install.",
   "license": "MIT",
@@ -37,8 +37,8 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "mcp-mail": "./dist/index.js",
-    "claude-mail-mcp": "./dist/index.js"
+    "mcp-mail": "dist/index.js",
+    "claude-mail-mcp": "dist/index.js"
   },
   "files": [
     ".env.example",
@@ -103,7 +103,10 @@
     "vitest": "^5.0.5"
   },
   "contributors": [
-    "Markus Stöger <hi@markusstoeger.com> (https://markusstoeger.com) — original claude-mail-mcp"
+    "Markus St\u00f6ger <hi@markusstoeger.com> (https://markusstoeger.com) \u2014 original claude-mail-mcp"
   ],
-  "mcpName": "io.github.annseraf/mcp-mail"
+  "mcpName": "io.github.annseraf/mcp-mail",
+  "publishConfig": {
+    "access": "public"
+  }
 }

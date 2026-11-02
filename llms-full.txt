@@ -10,7 +10,7 @@
 curl -fsSL https://raw.githubusercontent.com/Annseraf/mcp-mail/main/install.sh | sudo bash -s -- --auto-update
 ```
 
-Local clients (Claude Desktop, Claude Code, Cursor, VS Code) can run it directly: `npx -y mcp-mail stdio`.
+Local clients (Claude Desktop, Claude Code, Cursor, VS Code) can run it directly: `npx -y @annseraf/mcp-mail stdio`.
 
 mcp-mail is a maintained continuation of [claude-mail-mcp](https://github.com/maxx3250/claude-mail-mcp) by Markus Stöger (MIT). Existing claude-mail-mcp v0.2 installs can switch with **no config changes** ([compatibility contract](docs/COMPATIBILITY.md)).
 
@@ -196,7 +196,7 @@ Claude Desktop, `claude_desktop_config.json`:
   "mcpServers": {
     "email": {
       "command": "npx",
-      "args": ["-y", "mcp-mail", "stdio"],
+      "args": ["-y", "@annseraf/mcp-mail", "stdio"],
       "env": {
         "ACCOUNTS_FILE": "/Users/you/.config/mcp-mail/accounts.json",
         "STDIO_PRESET": "read-draft"
@@ -209,7 +209,7 @@ Claude Desktop, `claude_desktop_config.json`:
 Claude Code:
 
 ```sh
-claude mcp add email -e STDIO_PRESET=read-draft -- npx -y mcp-mail stdio
+claude mcp add email -e STDIO_PRESET=read-draft -- npx -y @annseraf/mcp-mail stdio
 ```
 
 `STDIO_PRESET` is optional (`read-only`, `read-draft`, `organize`, `full-no-delete`, `full`).
@@ -270,7 +270,7 @@ Notes:
   "mcpServers": {
     "email": {
       "command": "npx",
-      "args": ["-y", "mcp-mail", "stdio"],
+      "args": ["-y", "@annseraf/mcp-mail", "stdio"],
       "env": { "STDIO_PRESET": "read-draft" }
     }
   }
@@ -308,7 +308,7 @@ mcp-mail clients add cursor --for cursor     # token printed once
     "email": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "mcp-mail", "stdio"],
+      "args": ["-y", "@annseraf/mcp-mail", "stdio"],
       "env": { "STDIO_PRESET": "read-draft" }
     }
   }
@@ -376,7 +376,7 @@ curl -s https://mail.example.com/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
-**Local (stdio).** `npx -y mcp-mail stdio`, with `ACCOUNTS_FILE` and optional `STDIO_PRESET`.
+**Local (stdio).** `npx -y @annseraf/mcp-mail stdio`, with `ACCOUNTS_FILE` and optional `STDIO_PRESET`.
 
 Clients that only support OAuth sign-in can use the built-in OAuth server (`OAUTH=true`); see
 [claude-ai.md](claude-ai.md).
@@ -973,7 +973,7 @@ Images are multi-arch (amd64, arm64) with provenance attestations
 
 ## Local clients
 
-`npx -y mcp-mail stdio`; see [clients/claude-desktop-code.md](clients/claude-desktop-code.md).
+`npx -y @annseraf/mcp-mail stdio`; see [clients/claude-desktop-code.md](clients/claude-desktop-code.md).
 
 ---
 

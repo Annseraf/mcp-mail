@@ -14,7 +14,7 @@ if (!commit) {
   }
 }
 const info = {
-  name: pkg.name,
+  name: pkg.name.replace(/^@[^/]+\//, ""),
   version: pkg.version,
   commit,
   buildTime: process.env.BUILD_TIME ?? new Date().toISOString(),
