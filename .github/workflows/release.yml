@@ -135,4 +135,10 @@ jobs:
         run: |
           curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/download/v1.8.7/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
           ./mcp-publisher login github-oidc
+          # npm takes a few minutes to serve a new version; the registry validates against it.
+          v="$(node -p 'require("./package.json").version')"
+          for _ in $(seq 1 40); do
+            [ "$(npm view "@annseraf/mcp-mail@$v" version 2>/dev/null)" = "$v" ] && break
+            sleep 15
+          done
           ./mcp-publisher publish || echo "::warning::MCP Registry publish failed (is the npm package published?)"
