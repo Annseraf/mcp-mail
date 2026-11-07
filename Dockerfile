@@ -1,5 +1,5 @@
 # mcp-mail container image (published to ghcr.io/annseraf/mcp-mail by CI).
-FROM node:22-bookworm-slim AS build
+FROM node:25-bookworm-slim AS build
 WORKDIR /src
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -7,7 +7,7 @@ COPY . .
 ARG BUILD_COMMIT=unknown
 RUN BUILD_COMMIT=$BUILD_COMMIT npm run build && npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 
-FROM node:22-bookworm-slim
+FROM node:25-bookworm-slim
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3220 ACCOUNTS_FILE=/data/accounts.json DATA_DIR=/data
 WORKDIR /app
 COPY --from=build /src/package.json ./
