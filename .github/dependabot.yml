@@ -21,3 +21,7 @@ updates:
   - package-ecosystem: docker
     directory: /
     schedule: { interval: weekly }
+    ignore:
+      # Major Node versions are chosen by hand (LTS only, and in the CI matrix).
+      - dependency-name: node
+        update-types: [version-update:semver-major]
