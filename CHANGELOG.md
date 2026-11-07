@@ -2,6 +2,13 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.1.0](https://github.com/Annseraf/mcp-mail/compare/v1.0.2...v1.1.0) (2026-11-07)
+
+
+### Features
+
+* approval queue for sends ("ask me before sending") ([#24](https://github.com/Annseraf/mcp-mail/issues/24)) ([3189289](https://github.com/Annseraf/mcp-mail/commit/3189289ceec7ab4fbb644160af9459484ec9d379))
+
 ## [1.0.2](https://github.com/Annseraf/mcp-mail/compare/v1.0.1...v1.0.2) (2026-11-02)
 
 
