@@ -44,6 +44,8 @@ export interface ClientRecord {
   accounts?: string[];
   /** Sending is off by default even when the preset allows it (prompt-injection risk). */
   sendEnabled: boolean;
+  /** "approval": sends wait in Drafts until the owner approves them (default "direct"). */
+  sendMode?: "direct" | "approval";
   tokenHash: string;
   status: "active" | "revoked";
   createdAt: string;

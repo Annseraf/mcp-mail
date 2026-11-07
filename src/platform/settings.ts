@@ -21,6 +21,8 @@ export interface PlatformSettings {
   adminHost: string;
   adminPort: number;
   adminToken?: string;
+  /** Approval queue ("ask me before sending"): expiry and an optional webhook to the product. */
+  approvals?: { ttlMs: number; webhookUrl?: string; webhookSecret?: string };
   /** OAuth for tenant endpoints with login delegated to the product (TENANT_OAUTH=true). */
   tenantOAuth?: {
     tokenSecretHex: string;
@@ -75,7 +77,16 @@ export function loadPlatformSettings(
     adminHost: env.ADMIN_HOST?.trim() || "127.0.0.1",
     adminPort: Number(env.ADMIN_PORT ?? 3330),
     adminToken: secret(env, "ADMIN_TOKEN"),
+    approvals: {
+      ttlMs: Number(env.APPROVAL_TTL_HOURS ?? 24) * 3_600_000,
+      webhookUrl: env.APPROVAL_WEBHOOK_URL?.trim() || undefined,
+      webhookSecret: secret(env, "APPROVAL_WEBHOOK_SECRET"),
+    },
   };
+  const ttl = s.approvals!.ttlMs;
+  if (!Number.isFinite(ttl) || ttl < 60_000 || ttl > 30 * 86_400_000) {
+    throw new Error("APPROVAL_TTL_HOURS must be between 0.02 and 720");
+  }
   if (s.adminApi) {
     if (!s.multiTenant) throw new Error("ADMIN_API=true requires MULTI_TENANT=true");
     if (!s.adminToken || s.adminToken.length < 32) {

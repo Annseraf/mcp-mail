@@ -21,20 +21,22 @@ Every MCP endpoint serves both protocol eras on the same URL:
 
 ## Settings
 
-| Variable                                              | Default              | Meaning                                                                                |
-| ----------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------- |
-| `MULTI_TENANT`                                        | `false`              | Serve `POST /t/<tenantId>/mcp`                                                         |
-| `DATA_DIR`                                            | `/var/lib/mcp-mail`  | Tenants, encrypted secrets, audit logs                                                 |
-| `TENANT_BASE_URL`                                     | `PUBLIC_URL`         | Public origin used in endpoint URLs, e.g. `https://connect.example.com`                |
-| `CONFIG_PROVIDER`                                     | `store`              | `store` (admin API manages tenants) or `http` (an internal service owns tenant config) |
-| `CONFIG_PROVIDER_URL`, `CONFIG_PROVIDER_TOKEN[_FILE]` |                      | For `http`: `GET <url>/tenants/<id>` with `Authorization: Bearer <token>`              |
-| `CONFIG_CACHE_TTL_MS`                                 | `30000`              | Cache TTL for `http` config                                                            |
-| `SECRETS_KEY_PROVIDER`                                | `local`              | `local` (key file) or `oci` (OCI Vault)                                                |
-| `SECRETS_KEY_FILE`                                    | `$DATA_DIR/keys/kek` | 32-byte key-encryption key, mode 0600                                                  |
-| `ADMIN_API`                                           | `false`              | Serve `/admin/v1` (requires `MULTI_TENANT=true`)                                       |
-| `ADMIN_HOST` / `ADMIN_PORT`                           | `127.0.0.1` / `3330` | Must be loopback or a private address; public binds are refused                        |
-| `ADMIN_TOKEN[_FILE]`                                  |                      | Service token, at least 32 characters                                                  |
-| `SECRETS_ENCRYPTION`                                  | unset                | Single-tenant only: `local` decrypts `enc:v1:` passwords in `accounts.json`            |
+| Variable                                                 | Default              | Meaning                                                                                                                 |
+| -------------------------------------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `MULTI_TENANT`                                           | `false`              | Serve `POST /t/<tenantId>/mcp`                                                                                          |
+| `DATA_DIR`                                               | `/var/lib/mcp-mail`  | Tenants, encrypted secrets, audit logs                                                                                  |
+| `TENANT_BASE_URL`                                        | `PUBLIC_URL`         | Public origin used in endpoint URLs, e.g. `https://connect.example.com`                                                 |
+| `CONFIG_PROVIDER`                                        | `store`              | `store` (admin API manages tenants) or `http` (an internal service owns tenant config)                                  |
+| `CONFIG_PROVIDER_URL`, `CONFIG_PROVIDER_TOKEN[_FILE]`    |                      | For `http`: `GET <url>/tenants/<id>` with `Authorization: Bearer <token>`                                               |
+| `CONFIG_CACHE_TTL_MS`                                    | `30000`              | Cache TTL for `http` config                                                                                             |
+| `SECRETS_KEY_PROVIDER`                                   | `local`              | `local` (key file) or `oci` (OCI Vault)                                                                                 |
+| `SECRETS_KEY_FILE`                                       | `$DATA_DIR/keys/kek` | 32-byte key-encryption key, mode 0600                                                                                   |
+| `ADMIN_API`                                              | `false`              | Serve `/admin/v1` (requires `MULTI_TENANT=true`)                                                                        |
+| `ADMIN_HOST` / `ADMIN_PORT`                              | `127.0.0.1` / `3330` | Must be loopback or a private address; public binds are refused                                                         |
+| `ADMIN_TOKEN[_FILE]`                                     |                      | Service token, at least 32 characters                                                                                   |
+| `APPROVAL_TTL_HOURS`                                     | `24`                 | How long a send waits for approval before it expires (the draft stays in Drafts)                                        |
+| `APPROVAL_WEBHOOK_URL`, `APPROVAL_WEBHOOK_SECRET[_FILE]` |                      | Optional: `POST` here on every new approval request, signed `x-mcp-mail-signature: t=<unix>,v1=<hmac-sha256("t.body")>` |
+| `SECRETS_ENCRYPTION`                                     | unset                | Single-tenant only: `local` decrypts `enc:v1:` passwords in `accounts.json`                                             |
 
 ## Tenants
 
@@ -66,6 +68,27 @@ tenant's `allowSend` and the client's own `sendEnabled` toggle, which is off by 
 | `organize`       | + organize (mark read, move) |
 | `full-no-delete` | + send, calendar-write       |
 | `full`           | + destructive (delete)       |
+
+## Approval queue ("ask me before sending")
+
+A client with `sendMode: "approval"` never sends directly. `send_message` saves the message,
+signature and attachments included, to the mailbox's Drafts folder and tells the agent it is
+waiting for the owner. The engine stores only the request: ids, the draft's Message-ID and
+timestamps, never the content.
+
+- `GET /tenants/{id}/approvals[?status=pending]` lists requests, newest first.
+- `GET /tenants/{id}/approvals/{approvalId}` adds a preview read live from the draft (recipients,
+  subject, plain text, attachment names), so edits made in a mail app are what gets approved.
+- `POST …/approve` sends the draft as it is now, copies it to Sent and removes the draft.
+  `POST …/reject` removes the draft. Each request is decided once; both are written to the
+  audit log (`approved-by-owner`, `rejected-by-owner`; the held call is `awaiting-approval`).
+- Requests expire after `APPROVAL_TTL_HOURS`; the draft stays in Drafts to send by hand.
+- With `APPROVAL_WEBHOOK_URL` set, every new request is posted there (`type: approval.created`,
+  `tenantId`, `approvalId`, `clientId`, `account`, `createdAt`, `expiresAt`) so the product can
+  notify the owner. Delivery is best effort; the list endpoint is the source of truth.
+
+Sending still needs the tenant's `allowSend` and the client's `sendEnabled`; approving is
+refused while the tenant is suspended or `allowSend` is off.
 
 ## Secret store
 

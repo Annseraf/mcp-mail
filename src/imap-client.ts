@@ -314,6 +314,19 @@ export class ImapClient {
   }
 
   /** UIDs in a mailbox whose header contains a value (Message-ID, References, In-Reply-To). */
+  /** Raw RFC 822 source of one message. */
+  async getSource(mailbox: string, uid: number): Promise<Buffer> {
+    const client = await this.ensureConnected();
+    const lock = await client.getMailboxLock(mailbox);
+    try {
+      const msg = await client.fetchOne(`${uid}`, { source: true }, { uid: true });
+      if (!msg || !msg.source) throw new Error(`Message UID ${uid} not found in ${mailbox}`);
+      return msg.source as Buffer;
+    } finally {
+      lock.release();
+    }
+  }
+
   async searchHeader(mailbox: string, header: string, value: string): Promise<number[]> {
     const client = await this.ensureConnected();
     const lock = await client.getMailboxLock(mailbox);

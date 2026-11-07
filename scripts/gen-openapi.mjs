@@ -16,6 +16,18 @@ const tenantPath = {
 };
 const mailboxPath = { name: "mailboxId", in: "path", required: true, schema: ref("ObjectId") };
 const clientPath = { name: "clientId", in: "path", required: true, schema: ref("ObjectId") };
+const approvalPath = {
+  name: "approvalId",
+  in: "path",
+  required: true,
+  schema: { type: "string", pattern: "^ap-[0-9a-f]{12}$" },
+};
+const approvalStatus = { enum: ["pending", "approved", "rejected", "expired", "failed"] };
+const sendMode = {
+  enum: ["direct", "approval"],
+  description:
+    "approval: send_message saves the message to Drafts and waits for the owner (see /approvals)",
+};
 const common = { 401: err("Missing or invalid service token") };
 const withTenant = { ...common, 404: err("Tenant not found") };
 const body = (schema) => ({ required: true, content: { "application/json": { schema } } });
@@ -199,6 +211,57 @@ const spec = {
         responses: {
           200: json(ref("ClientWithToken")),
           409: err("Client is revoked"),
+          ...withTenant,
+        },
+      }),
+    },
+    "/tenants/{tenantId}/approvals": {
+      parameters: [tenantPath],
+      get: op("listApprovals", "Sends waiting for (or decided by) the owner, newest first", {
+        parameters: [{ name: "status", in: "query", schema: approvalStatus }],
+        responses: {
+          200: json({
+            type: "object",
+            additionalProperties: false,
+            required: ["approvals"],
+            properties: { approvals: { type: "array", items: ref("Approval") } },
+          }),
+          400: err("Invalid request"),
+          ...withTenant,
+        },
+      }),
+    },
+    "/tenants/{tenantId}/approvals/{approvalId}": {
+      parameters: [tenantPath, approvalPath],
+      get: op("getApproval", "One request, with a preview of the held message while pending", {
+        responses: {
+          200: json(ref("Approval")),
+          409: err("The request's mailbox no longer exists"),
+          ...withTenant,
+        },
+      }),
+    },
+    "/tenants/{tenantId}/approvals/{approvalId}/approve": {
+      parameters: [tenantPath, approvalPath],
+      post: op(
+        "approveApproval",
+        "Send the held message as it is now in Drafts, copy it to Sent and remove the draft",
+        {
+          responses: {
+            200: json(ref("Approval")),
+            409: err("Already decided or expired, sending not allowed, or the mailbox is gone"),
+            502: err("The mail server refused the message; the request is marked failed"),
+            ...withTenant,
+          },
+        },
+      ),
+    },
+    "/tenants/{tenantId}/approvals/{approvalId}/reject": {
+      parameters: [tenantPath, approvalPath],
+      post: op("rejectApproval", "Remove the held draft without sending", {
+        responses: {
+          200: json(ref("Approval")),
+          409: err("Already decided or expired, or the mailbox is gone"),
           ...withTenant,
         },
       }),
@@ -416,6 +479,7 @@ const spec = {
           "preset",
           "accounts",
           "sendEnabled",
+          "sendMode",
           "status",
           "createdAt",
           "rotatedAt",
@@ -435,6 +499,7 @@ const spec = {
             description: "null = all mailboxes",
           },
           sendEnabled: { type: "boolean" },
+          sendMode,
           status: { enum: ["active", "revoked"] },
           createdAt: { type: "string", format: "date-time" },
           rotatedAt: { type: ["string", "null"] },
@@ -452,6 +517,7 @@ const spec = {
           preset: { ...ref("Preset"), default: "read-draft" },
           accounts: { type: "array", items: ref("ObjectId") },
           sendEnabled: { type: "boolean", default: false },
+          sendMode: { ...sendMode, default: "direct" },
         },
       },
       ClientPatch: {
@@ -462,6 +528,58 @@ const spec = {
           preset: ref("Preset"),
           accounts: { type: ["array", "null"], items: ref("ObjectId") },
           sendEnabled: { type: "boolean" },
+          sendMode,
+        },
+      },
+      Approval: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "id",
+          "clientId",
+          "account",
+          "status",
+          "createdAt",
+          "expiresAt",
+          "decidedAt",
+          "error",
+        ],
+        properties: {
+          id: { type: "string" },
+          clientId: ref("ObjectId"),
+          account: ref("ObjectId"),
+          status: approvalStatus,
+          createdAt: { type: "string", format: "date-time" },
+          expiresAt: { type: "string", format: "date-time" },
+          decidedAt: { type: ["string", "null"] },
+          error: { type: ["string", "null"], description: "Why sending failed (status failed)" },
+          preview: {
+            oneOf: [ref("ApprovalPreview"), { type: "null" }],
+            description: "Only on GET of one request; null unless pending and the draft exists",
+          },
+        },
+      },
+      ApprovalPreview: {
+        type: "object",
+        additionalProperties: false,
+        description: "The held message, read live from the draft (it may have been edited)",
+        required: ["from", "to", "cc", "bcc", "subject", "text", "attachments"],
+        properties: {
+          from: { type: "string" },
+          to: { type: "array", items: { type: "string" } },
+          cc: { type: "array", items: { type: "string" } },
+          bcc: { type: "array", items: { type: "string" } },
+          subject: { type: "string" },
+          text: { type: "string", description: "Plain-text body, at most 20,000 characters" },
+          attachments: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["filename", "size"],
+              properties: { filename: { type: "string" }, size: { type: "integer" } },
+            },
+          },
         },
       },
       ClientWithToken: {

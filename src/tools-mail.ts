@@ -15,6 +15,7 @@ import { positiveInt } from "./schemas.js";
 import { scopedWriter, withSignature, type AccountSettingsWriter } from "./account-settings.js";
 import { fence, fencingEnabled, FENCE_NOTE, htmlToCleanText, stripHidden } from "./content.js";
 import type { MessageSummary } from "./imap-client.js";
+import type { OutgoingMessage } from "./smtp-client.js";
 import { findThread, groupThreads } from "./threads.js";
 
 export interface MailToolOptions {
@@ -26,6 +27,11 @@ export interface MailToolOptions {
   settings?: AccountSettingsWriter;
   /** Register read-only `search` and `fetch` for ChatGPT deep research (default: CHATGPT_COMPAT=true). */
   chatgptCompat?: boolean;
+  /**
+   * Hold send_message for the owner's approval instead of sending (approval
+   * queue). Returns what to tell the agent.
+   */
+  holdSend?: (account: string | undefined, msg: OutgoingMessage) => Promise<string>;
 }
 
 const DEFAULT_MAX_ATTACHMENT = Number(process.env.ATTACHMENT_MAX_BYTES ?? 20 * 1024 * 1024);
@@ -245,8 +251,9 @@ export function registerMailTools(
   server.registerTool(
     "send_message",
     {
-      description:
-        "Send an email via SMTP. WRITE OPERATION — the message goes out immediately. Use create_draft instead if you want to review before sending. Saves a copy in the Sent folder if configured. For replies, pass in_reply_to + references from the original get_message result.",
+      description: opts.holdSend
+        ? "Ask to send an email. The owner approves every send: the message is saved to Drafts and goes out only once they approve it, so tell them it's waiting. For replies, pass in_reply_to + references from the original get_message result."
+        : "Send an email via SMTP. WRITE OPERATION — the message goes out immediately. Use create_draft instead if you want to review before sending. Saves a copy in the Sent folder if configured. For replies, pass in_reply_to + references from the original get_message result.",
       inputSchema: z.object({
         to: recipientSchema.describe("Recipient(s). String or array of email addresses."),
         subject: z.string().min(1).describe("Subject line"),
@@ -284,6 +291,24 @@ export function registerMailTools(
       const signature =
         args.include_signature === false ? undefined : store.resolve(args.account).mail.signature;
       Object.assign(args, withSignature({ text: args.text, html: args.html }, signature));
+      if (opts.holdSend) {
+        const waiting = await opts.holdSend(args.account, {
+          to: args.to,
+          cc: args.cc,
+          bcc: args.bcc,
+          subject: args.subject,
+          text: args.text,
+          html: args.html,
+          replyTo: args.reply_to,
+          inReplyTo: args.in_reply_to,
+          references: args.references,
+          attachments: attachmentsOf(args.attachments),
+        });
+        return {
+          ...asJson({ status: "awaiting_approval", message: waiting }),
+          auditReason: "awaiting-approval",
+        };
+      }
       const result = await smtp.send({
         to: args.to,
         cc: args.cc,
