@@ -6,6 +6,15 @@ updates:
     groups:
       patches:
         update-types: [patch]
+    ignore:
+      # Types must match the oldest Node we support (package.json engines), or
+      # code could use APIs that crash there. Bump by hand with engines.
+      - dependency-name: "@types/node"
+        update-types: [version-update:semver-major]
+      # typescript-eslint doesn't support TypeScript 7 yet (peer < 6.1). Remove
+      # this once it does.
+      - dependency-name: typescript
+        versions: [">=7"]
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
