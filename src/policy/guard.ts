@@ -67,7 +67,12 @@ function rateLimited(key: string, perHour: number): boolean {
   return false;
 }
 
-type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
+type ToolResult = {
+  content: { type: "text"; text: string }[];
+  isError?: boolean;
+  /** Set by a tool to explain an "ok" in the audit log (e.g. awaiting-approval); never sent. */
+  auditReason?: string;
+};
 
 export interface GuardOptions {
   policy: ClientPolicy;
@@ -152,9 +157,12 @@ export function guardTools(server: McpServer, o: GuardOptions): void {
 
       try {
         const result = await cb(args, extra);
+        const reason = result?.auditReason;
+        if (result) delete result.auditReason;
         await record({
           ...base,
           result: result?.isError ? "error" : "ok",
+          ...(reason ? { reason } : {}),
           durationMs: Date.now() - started,
         });
         return result;

@@ -83,13 +83,15 @@ export class SmtpClient {
    * the SMTP transport. Used by create_draft (APPEND to Drafts folder) and
    * by the "save copy to Sent folder" step after send().
    */
-  async buildRawSource(msg: OutgoingMessage): Promise<Buffer> {
+  async buildRawSource(msg: OutgoingMessage, opts: { keepBcc?: boolean } = {}): Promise<Buffer> {
     const mail = this.toMailOptions(msg);
     // Lazy import to keep startup light.
     const { default: MailComposer } = await import("nodemailer/lib/mail-composer/index.js");
-    const composer = new MailComposer(mail);
+    const node = new MailComposer(mail).compile();
+    // Drafts keep Bcc so the message can be sent later as written.
+    if (opts.keepBcc) (node as unknown as { keepBcc: boolean }).keepBcc = true;
     return await new Promise<Buffer>((resolve, reject) => {
-      composer.compile().build((err, message) => {
+      node.build((err, message) => {
         if (err) reject(err);
         else resolve(message);
       });

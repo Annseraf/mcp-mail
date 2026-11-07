@@ -13,6 +13,7 @@ import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { ImapFlow } from "imapflow";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AccountsStore } from "../../src/accounts.js";
 import { ClientPool } from "../../src/client-pool.js";
@@ -28,6 +29,42 @@ type Json = any;
 
 const ADMIN_TOKEN = randomBytes(24).toString("hex");
 const logs: string[] = [];
+const webhooks: { body: Json; signature: string | null }[] = [];
+
+/** UIDs of messages with this subject in a user's folder. */
+async function findMail(
+  u: { email: string; pass: string },
+  folder: string,
+  subject: string,
+): Promise<number[]> {
+  const c = new ImapFlow({
+    host: mail.host,
+    port: mail.imapPort,
+    secure: false,
+    auth: { user: u.email, pass: u.pass },
+    logger: false,
+  });
+  await c.connect();
+  try {
+    const lock = await c.getMailboxLock(folder);
+    try {
+      const found = await c.search({ subject }, { uid: true });
+      return Array.isArray(found) ? found : [];
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await c.logout();
+  }
+}
+
+async function eventually(fn: () => Promise<boolean>): Promise<boolean> {
+  for (let i = 0; i < 50; i++) {
+    if (await fn()) return true;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return false;
+}
 
 let dir: string;
 let engine: Engine;
@@ -137,6 +174,11 @@ describe("platform: multi-tenant mode and admin API", () => {
       adminHost: "127.0.0.1",
       adminPort: 0,
       adminToken: ADMIN_TOKEN,
+      approvals: {
+        ttlMs: 3_600_000,
+        webhookUrl: "https://product.example.com/hooks/approvals",
+        webhookSecret: "hook-secret",
+      },
     };
     engine = await createEngine({
       version: "test",
@@ -147,6 +189,13 @@ describe("platform: multi-tenant mode and admin API", () => {
       platform,
       keyProvider: LocalKeyFileProvider.fromKey(randomBytes(32)),
       log: (level, msg, extra) => logs.push(JSON.stringify({ level, msg, ...extra })),
+      fetchImpl: (async (_url: string, init: RequestInit) => {
+        webhooks.push({
+          body: JSON.parse(String(init.body)),
+          signature: new Headers(init.headers).get("x-mcp-mail-signature"),
+        });
+        return new Response(null, { status: 204 });
+      }) as typeof fetch,
     });
     const app = await listen(engine.app, 0, "127.0.0.1");
     const adm = await listen(engine.admin!, 0, "127.0.0.1");
@@ -469,6 +518,93 @@ describe("platform: multi-tenant mode and admin API", () => {
     expect(out).toContain(`endpoint: https://connect.example.com/t/${tenantId}/mcp`);
     expect((await call(tenantId, agentToken, "list_accounts")).isError ?? false).toBe(false);
     await admin("DELETE", `/tenants/${tenantId}`);
+  });
+
+  it("holds sends for approval: the owner approves or rejects from Drafts", async () => {
+    const T = "tenant-ask";
+    await admin("POST", "/tenants", {
+      id: T,
+      limits: { maxMailboxes: 1, maxClients: 2, toolCallsPerDay: 1000, allowSend: true },
+    });
+    await admin("POST", `/tenants/${T}/mailboxes`, mailboxBody("main", mail.users.alice));
+    const c = await admin("POST", `/tenants/${T}/clients`, {
+      id: "asker",
+      name: "Asker",
+      preset: "full-no-delete",
+      sendEnabled: true,
+      sendMode: "approval",
+    });
+    expect(c.body.client.sendMode).toBe("approval");
+    const token = c.body.token;
+    const tools = (await mcp(T, token, "tools/list")).body.result.tools as Json[];
+    expect(tools.find((t) => t.name === "send_message").description).toMatch(/approves every send/);
+
+    const subject = `Approve me ${randomBytes(3).toString("hex")}`;
+    const held = await call(T, token, "send_message", {
+      to: mail.users.bob.email,
+      bcc: "carol@example.com",
+      subject,
+      text: "Held for the owner",
+    });
+    expect(held.isError ?? false).toBe(false);
+    expect(held.content[0].text).toMatch(/awaiting_approval/);
+    expect(await findMail(mail.users.alice, "Drafts", subject)).toHaveLength(1);
+    expect(await findMail(mail.users.bob, "INBOX", subject)).toHaveLength(0);
+
+    // The product hears about it, signed.
+    const hook = webhooks.find((w) => w.body.tenantId === T);
+    expect(hook?.body.type).toBe("approval.created");
+    expect(hook?.signature).toMatch(/^t=\d+,v1=[0-9a-f]{64}$/);
+
+    const pending = await admin("GET", `/tenants/${T}/approvals?status=pending`);
+    expect(pending.body.approvals).toHaveLength(1);
+    const id = pending.body.approvals[0].id;
+    expect(hook?.body.approvalId).toBe(id);
+    const one = await admin("GET", `/tenants/${T}/approvals/${id}`);
+    expect(one.body.preview).toMatchObject({
+      to: [mail.users.bob.email],
+      bcc: ["carol@example.com"],
+      subject,
+    });
+    expect(one.body.preview.text).toMatch(/Held for the owner/);
+    expect((await admin("GET", `/tenants/${T}/approvals?status=nope`)).status).toBe(400);
+    expect((await admin("GET", `/tenants/${T}/approvals/ap-000000000000`)).status).toBe(404);
+
+    const approved = await admin("POST", `/tenants/${T}/approvals/${id}/approve`);
+    expect(approved.body.status).toBe("approved");
+    expect(
+      await eventually(async () => (await findMail(mail.users.bob, "INBOX", subject)).length === 1),
+    ).toBe(true);
+    expect(await findMail(mail.users.alice, "Drafts", subject)).toHaveLength(0);
+    expect(await findMail(mail.users.alice, "Sent", subject)).toHaveLength(1);
+    expect((await admin("POST", `/tenants/${T}/approvals/${id}/approve`)).status).toBe(409);
+
+    // Rejecting removes the draft and sends nothing.
+    const other = `Reject me ${randomBytes(3).toString("hex")}`;
+    await call(T, token, "send_message", { to: mail.users.bob.email, subject: other, text: "No" });
+    const id2 = (await admin("GET", `/tenants/${T}/approvals?status=pending`)).body.approvals[0].id;
+    expect((await admin("POST", `/tenants/${T}/approvals/${id2}/reject`)).body.status).toBe(
+      "rejected",
+    );
+    expect(await findMail(mail.users.alice, "Drafts", other)).toHaveLength(0);
+    expect((await admin("POST", `/tenants/${T}/approvals/${id2}/approve`)).status).toBe(409);
+    expect(await findMail(mail.users.bob, "INBOX", other)).toHaveLength(0);
+
+    const all = (await admin("GET", `/tenants/${T}/approvals`)).body.approvals as Json[];
+    expect(all.map((a) => a.status)).toEqual(["rejected", "approved"]);
+    const reasons = (await admin("GET", `/tenants/${T}/audit`)).body.entries.map(
+      (e: Json) => e.reason,
+    );
+    expect(reasons).toEqual(
+      expect.arrayContaining(["awaiting-approval", "approved-by-owner", "rejected-by-owner"]),
+    );
+
+    // Back to direct sending.
+    const patched = await admin("PATCH", `/tenants/${T}/clients/asker`, { sendMode: "direct" });
+    expect(patched.body.sendMode).toBe("direct");
+
+    expect((await admin("DELETE", `/tenants/${T}`)).status).toBe(204);
+    expect(existsSync(path.join(dir, `approvals/${T}.json`))).toBe(false);
   });
 
   it("deleting a tenant purges its secrets, audit, tokens and record, and leaves others intact", async () => {

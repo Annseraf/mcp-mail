@@ -1022,6 +1022,298 @@
         }
       }
     },
+    "/tenants/{tenantId}/approvals": {
+      "parameters": [
+        {
+          "name": "tenantId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{2,62}$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "listApprovals",
+        "summary": "Sends waiting for (or decided by) the owner, newest first",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "enum": ["pending", "approved", "rejected", "expired", "failed"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["approvals"],
+                  "properties": {
+                    "approvals": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Approval"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid service token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Tenant not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tenants/{tenantId}/approvals/{approvalId}": {
+      "parameters": [
+        {
+          "name": "tenantId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{2,62}$"
+          }
+        },
+        {
+          "name": "approvalId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^ap-[0-9a-f]{12}$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getApproval",
+        "summary": "One request, with a preview of the held message while pending",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Approval"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid service token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Tenant not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request's mailbox no longer exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tenants/{tenantId}/approvals/{approvalId}/approve": {
+      "parameters": [
+        {
+          "name": "tenantId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{2,62}$"
+          }
+        },
+        {
+          "name": "approvalId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^ap-[0-9a-f]{12}$"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "approveApproval",
+        "summary": "Send the held message as it is now in Drafts, copy it to Sent and remove the draft",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Approval"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid service token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Tenant not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already decided or expired, sending not allowed, or the mailbox is gone",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The mail server refused the message; the request is marked failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tenants/{tenantId}/approvals/{approvalId}/reject": {
+      "parameters": [
+        {
+          "name": "tenantId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{2,62}$"
+          }
+        },
+        {
+          "name": "approvalId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^ap-[0-9a-f]{12}$"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "rejectApproval",
+        "summary": "Remove the held draft without sending",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Approval"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid service token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Tenant not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Already decided or expired, or the mailbox is gone",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/tenants/{tenantId}/audit": {
       "parameters": [
         {
@@ -1600,6 +1892,7 @@
           "preset",
           "accounts",
           "sendEnabled",
+          "sendMode",
           "status",
           "createdAt",
           "rotatedAt",
@@ -1628,6 +1921,10 @@
           },
           "sendEnabled": {
             "type": "boolean"
+          },
+          "sendMode": {
+            "enum": ["direct", "approval"],
+            "description": "approval: send_message saves the message to Drafts and waits for the owner (see /approvals)"
           },
           "status": {
             "enum": ["active", "revoked"]
@@ -1674,6 +1971,11 @@
           "sendEnabled": {
             "type": "boolean",
             "default": false
+          },
+          "sendMode": {
+            "enum": ["direct", "approval"],
+            "description": "approval: send_message saves the message to Drafts and waits for the owner (see /approvals)",
+            "default": "direct"
           }
         }
       },
@@ -1695,6 +1997,116 @@
           },
           "sendEnabled": {
             "type": "boolean"
+          },
+          "sendMode": {
+            "enum": ["direct", "approval"],
+            "description": "approval: send_message saves the message to Drafts and waits for the owner (see /approvals)"
+          }
+        }
+      },
+      "Approval": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "clientId",
+          "account",
+          "status",
+          "createdAt",
+          "expiresAt",
+          "decidedAt",
+          "error"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "clientId": {
+            "$ref": "#/components/schemas/ObjectId"
+          },
+          "account": {
+            "$ref": "#/components/schemas/ObjectId"
+          },
+          "status": {
+            "enum": ["pending", "approved", "rejected", "expired", "failed"]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decidedAt": {
+            "type": ["string", "null"]
+          },
+          "error": {
+            "type": ["string", "null"],
+            "description": "Why sending failed (status failed)"
+          },
+          "preview": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only on GET of one request; null unless pending and the draft exists"
+          }
+        }
+      },
+      "ApprovalPreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "The held message, read live from the draft (it may have been edited)",
+        "required": ["from", "to", "cc", "bcc", "subject", "text", "attachments"],
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cc": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bcc": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "subject": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string",
+            "description": "Plain-text body, at most 20,000 characters"
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["filename", "size"],
+              "properties": {
+                "filename": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "integer"
+                }
+              }
+            }
           }
         }
       },

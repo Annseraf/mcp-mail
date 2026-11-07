@@ -33,6 +33,7 @@ import { createAdminApp } from "./admin/api.js";
 import { AuditLog, StdoutAudit, type AuditSink } from "./platform/audit.js";
 import { OciKmsKeyProvider } from "./platform/oci-kms.js";
 import { guardTenantTools, TenantRuntime, type TenantContext } from "./platform/runtime.js";
+import { ApprovalStore } from "./platform/approvals.js";
 import {
   EnvelopeFileSecretStore,
   LocalKeyFileProvider,
@@ -78,6 +79,7 @@ export interface Platform {
   secrets: SecretStore;
   audit: AuditLog;
   runtime: TenantRuntime;
+  approvals: ApprovalStore;
 }
 
 export interface Engine {
@@ -120,6 +122,12 @@ async function buildPlatform(o: EngineOptions): Promise<Platform> {
     secrets,
     audit,
     runtime: new TenantRuntime(config, secrets, audit, o.log),
+    approvals: new ApprovalStore(
+      path.join(s.dataDir, "approvals"),
+      s.approvals ?? { ttlMs: 24 * 3_600_000 },
+      o.log,
+      o.fetchImpl,
+    ),
   };
 }
 
@@ -339,7 +347,23 @@ export async function createEngine(o: EngineOptions): Promise<Engine> {
         ctx.pool,
         ctx.accounts,
         (server) => guardTenantTools(server, ctx, p.audit),
-        { settings },
+        {
+          settings,
+          holdSend:
+            ctx.client.sendMode === "approval"
+              ? async (account, msg) => {
+                  const id = ctx.accounts.resolve(account).id;
+                  const rec = await p.approvals.hold(
+                    ctx.tenant.id,
+                    ctx.client.id,
+                    id,
+                    ctx.pool.for(id),
+                    msg,
+                  );
+                  return `Saved to Drafts and waiting for the owner's approval (request ${rec.id}). It is sent only if they approve it, and expires at ${rec.expiresAt}.`;
+                }
+              : undefined,
+        },
       );
     });
     if (o.platform.tenantOAuth) {

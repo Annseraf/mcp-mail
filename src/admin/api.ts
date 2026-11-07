@@ -13,6 +13,7 @@ import { buildInfo } from "../version.js";
 import { PRESETS } from "../policy/capabilities.js";
 import type { Platform } from "../engine.js";
 import { secretName } from "../platform/runtime.js";
+import { ApprovalError, type ApprovalPreview, type ApprovalRecord } from "../platform/approvals.js";
 import { safeEqual, newClientToken } from "../platform/tokens.js";
 import { isTenantId } from "../platform/ids.js";
 import {
@@ -123,12 +124,14 @@ const clientCreate = z.object({
   preset: preset.default("read-draft"),
   accounts: z.array(objectId).max(1000).optional(),
   sendEnabled: z.boolean().default(false),
+  sendMode: z.enum(["direct", "approval"]).default("direct"),
 });
 const clientPatch = z.object({
   name: z.string().min(1).max(100).optional(),
   preset: preset.optional(),
   accounts: z.array(objectId).max(1000).nullable().optional(),
   sendEnabled: z.boolean().optional(),
+  sendMode: z.enum(["direct", "approval"]).optional(),
 });
 
 function parse<T extends z.ZodType>(schema: T, body: unknown): z.infer<T> {
@@ -169,6 +172,7 @@ const clientView = (c: ClientRecord) => ({
   preset: c.preset,
   accounts: c.accounts ?? null,
   sendEnabled: c.sendEnabled,
+  sendMode: c.sendMode ?? "direct",
   status: c.status,
   createdAt: c.createdAt,
   rotatedAt: c.rotatedAt ?? null,
@@ -293,6 +297,7 @@ export function createAdminApp(d: AdminDeps): Express {
       await p.secrets.purgeTenant(id);
       await p.oauth?.purgeTenant(id);
       await p.audit.purgeTenant(id);
+      await p.approvals.purgeTenant(id);
       await store().delete(id);
       p.config.invalidate(id);
       d.log("info", "admin: tenant deleted", { tenantId: id });
@@ -447,6 +452,7 @@ export function createAdminApp(d: AdminDeps): Express {
         preset: b.preset,
         accounts: b.accounts,
         sendEnabled: b.sendEnabled,
+        sendMode: b.sendMode,
         tokenHash: hash,
         status: "active",
         createdAt: now(),
@@ -488,6 +494,7 @@ export function createAdminApp(d: AdminDeps): Express {
         if (b.preset !== undefined) c.preset = b.preset;
         if (b.accounts !== undefined) c.accounts = b.accounts ?? undefined;
         if (b.sendEnabled !== undefined) c.sendEnabled = b.sendEnabled;
+        if (b.sendMode !== undefined) c.sendMode = b.sendMode;
         view = clientView(c);
       });
       res.json(view);
@@ -523,6 +530,94 @@ export function createAdminApp(d: AdminDeps): Express {
       res.json({ client: view, token, endpoint: endpointUrl(String(req.params.id)) });
     }),
   );
+
+  // approval queue ("ask me before sending")
+  const approvalView = (a: ApprovalRecord, preview?: ApprovalPreview | null) => ({
+    id: a.id,
+    clientId: a.clientId,
+    account: a.account,
+    status: a.status,
+    createdAt: a.createdAt,
+    expiresAt: a.expiresAt,
+    decidedAt: a.decidedAt ?? null,
+    error: a.error ?? null,
+    ...(preview !== undefined ? { preview } : {}),
+  });
+  /** The held message's mailbox connections (the client may since be revoked). */
+  const approvalClients = async (t: TenantRecord, a: ApprovalRecord) => {
+    const client = t.clients.find((c) => c.id === a.clientId) ?? t.clients[0];
+    if (!client) throw new HttpError(409, "conflict", "The tenant has no clients");
+    const ctx = await p.runtime.context(t, { ...client, accounts: undefined });
+    try {
+      return ctx.pool.for(a.account);
+    } catch {
+      throw new HttpError(409, "conflict", "The mailbox for this request no longer exists");
+    }
+  };
+  const approvalOr404 = async (t: TenantRecord, aid: string) => {
+    const a = await p.approvals.get(t.id, aid);
+    if (!a) throw new HttpError(404, "not_found", "Approval request not found");
+    return a;
+  };
+  r.get(
+    "/tenants/:id/approvals",
+    h(async (req, res) => {
+      const t = await tenantOr404(String(req.params.id));
+      const status = req.query.status === undefined ? undefined : String(req.query.status);
+      if (status && !["pending", "approved", "rejected", "expired", "failed"].includes(status)) {
+        throw new HttpError(400, "invalid_request", "Unknown status");
+      }
+      const list = (await p.approvals.list(t.id))
+        .filter((a) => !status || a.status === status)
+        .reverse();
+      res.json({ approvals: list.map((a) => approvalView(a)) });
+    }),
+  );
+  r.get(
+    "/tenants/:id/approvals/:aid",
+    h(async (req, res) => {
+      const t = await tenantOr404(String(req.params.id));
+      const a = await approvalOr404(t, String(req.params.aid));
+      const preview =
+        a.status === "pending"
+          ? ((await p.approvals.preview(a, await approvalClients(t, a))) ?? null)
+          : null;
+      res.json(approvalView(a, preview));
+    }),
+  );
+  for (const decision of ["approve", "reject"] as const) {
+    r.post(
+      `/tenants/:id/approvals/:aid/${decision}`,
+      h(async (req, res) => {
+        const t = await tenantOr404(String(req.params.id));
+        const a = await approvalOr404(t, String(req.params.aid));
+        if (decision === "approve" && (t.status !== "active" || !t.limits.allowSend)) {
+          throw new HttpError(409, "conflict", "Sending isn't allowed for this tenant right now");
+        }
+        const started = Date.now();
+        let done: ApprovalRecord;
+        try {
+          done = await p.approvals.decide(t.id, a.id, decision, await approvalClients(t, a));
+        } catch (err) {
+          if (err instanceof ApprovalError) throw new HttpError(err.status, err.code, err.message);
+          throw err;
+        }
+        await p.audit
+          .record({
+            ts: new Date().toISOString(),
+            tenantId: t.id,
+            clientId: a.clientId,
+            tool: "send_message",
+            account: a.account,
+            result: decision === "approve" ? "ok" : "denied",
+            reason: decision === "approve" ? "approved-by-owner" : "rejected-by-owner",
+            durationMs: Date.now() - started,
+          })
+          .catch(() => {});
+        res.json(approvalView(done));
+      }),
+    );
+  }
 
   // audit + usage
   r.get(
