@@ -57,7 +57,7 @@ jobs:
       - run: BUILD_COMMIT="$(git rev-parse HEAD)" npm run build
       - name: Package tarball + checksums
         run: scripts/pack-release.sh release
-      - uses: sigstore/cosign-installer@v4.1.2
+      - uses: sigstore/cosign-installer@v4.1.3
       - name: Sign tarball (keyless, Sigstore)
         run: |
           for f in release/*.tar.gz; do
