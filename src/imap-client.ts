@@ -155,7 +155,8 @@ export class ImapClient {
     const lock = await client.getMailboxLock(mailbox);
     try {
       const status = await client.status(mailbox, { messages: true });
-      const total = status.messages ?? 0;
+      // imapflow 2 returns false when the folder can't be read.
+      const total = status ? (status.messages ?? 0) : 0;
       if (total === 0) return [];
       const limit = Math.min(opts.limit ?? 25, 200);
 
@@ -378,7 +379,7 @@ export class ImapClient {
         range = uids.slice(-200).join(",");
       } else {
         const status = await client.status(mailbox, { messages: true });
-        const total = status.messages ?? 0;
+        const total = status ? (status.messages ?? 0) : 0;
         if (total === 0) return [];
         range = `${Math.max(1, total - Math.min(limit, 500) + 1)}:*`;
         byUid = false;
