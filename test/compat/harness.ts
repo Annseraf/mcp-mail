@@ -270,7 +270,7 @@ export async function seedMail(): Promise<void> {
   const deadline = Date.now() + 10_000;
   for (;;) {
     const status = await client.status("INBOX", { messages: true });
-    if ((status.messages ?? 0) >= 2) break;
+    if (status && (status.messages ?? 0) >= 2) break;
     if (Date.now() > deadline) throw new Error("seed messages never arrived");
     await new Promise((r) => setTimeout(r, 100));
   }
