@@ -480,6 +480,8 @@ const spec = {
           "accounts",
           "sendEnabled",
           "sendMode",
+          "paused",
+          "pausedAt",
           "status",
           "createdAt",
           "rotatedAt",
@@ -500,6 +502,11 @@ const spec = {
           },
           sendEnabled: { type: "boolean" },
           sendMode,
+          paused: {
+            type: "boolean",
+            description: "Every tool call is refused (audit reason client-paused) until resumed",
+          },
+          pausedAt: { type: ["string", "null"], format: "date-time" },
           status: { enum: ["active", "revoked"] },
           createdAt: { type: "string", format: "date-time" },
           rotatedAt: { type: ["string", "null"] },
@@ -529,6 +536,10 @@ const spec = {
           accounts: { type: ["array", "null"], items: ref("ObjectId") },
           sendEnabled: { type: "boolean" },
           sendMode,
+          paused: {
+            type: "boolean",
+            description: "Pause (true) or resume (false); keeps the token",
+          },
         },
       },
       Approval: {

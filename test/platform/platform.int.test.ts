@@ -367,6 +367,27 @@ describe("platform: multi-tenant mode and admin API", () => {
     expect((await call(B, tokenB, "list_accounts")).isError ?? false).toBe(false);
   });
 
+  it("pauses and resumes a client without revoking it", async () => {
+    const paused = await admin("PATCH", `/tenants/${B}/clients/agent`, { paused: true });
+    expect(paused.body.paused).toBe(true);
+    expect(paused.body.pausedAt).toBeTruthy();
+    expect(paused.body.status).toBe("active");
+    const r = await call(B, tokenB, "list_accounts");
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toContain("paused");
+    // Other tenants' clients are unaffected.
+    expect((await call(A, tokenA, "list_accounts")).isError ?? false).toBe(false);
+    const reasons = (await admin("GET", `/tenants/${B}/audit`)).body.entries.map(
+      (e: Json) => e.reason,
+    );
+    expect(reasons).toContain("client-paused");
+    const resumed = await admin("PATCH", `/tenants/${B}/clients/agent`, { paused: false });
+    expect(resumed.body.paused).toBe(false);
+    expect(resumed.body.pausedAt).toBeNull();
+    // Same token works again: nothing to reconnect.
+    expect((await call(B, tokenB, "list_accounts")).isError ?? false).toBe(false);
+  });
+
   it("enforces the daily tool-call limit", async () => {
     const usage = await admin("GET", `/tenants/${B}/usage`);
     await admin("PUT", `/tenants/${B}/limits`, { toolCallsPerDay: usage.body.today + 1 });

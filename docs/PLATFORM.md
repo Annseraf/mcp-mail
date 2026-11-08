@@ -69,6 +69,12 @@ tenant's `allowSend` and the client's own `sendEnabled` toggle, which is off by 
 | `full-no-delete` | + send, calendar-write       |
 | `full`           | + destructive (delete)       |
 
+**Pause.** `PATCH /tenants/{id}/clients/{clientId}` with `{"paused": true}` stops a client
+without revoking it: its token and settings stay, it still sees its tools, and every call is
+refused with a clear message (audit reason `client-paused`) until `{"paused": false}`. Use it as
+an emergency stop that doesn't make the user reconnect the agent. To stop a whole tenant, use
+`/suspend`.
+
 ## Approval queue ("ask me before sending")
 
 A client with `sendMode: "approval"` never sends directly. `send_message` saves the message,

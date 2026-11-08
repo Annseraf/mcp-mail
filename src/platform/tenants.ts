@@ -46,6 +46,9 @@ export interface ClientRecord {
   sendEnabled: boolean;
   /** "approval": sends wait in Drafts until the owner approves them (default "direct"). */
   sendMode?: "direct" | "approval";
+  /** Paused: the client keeps its token and settings, but every tool call is refused until resumed. */
+  paused?: boolean;
+  pausedAt?: string;
   tokenHash: string;
   status: "active" | "revoked";
   createdAt: string;

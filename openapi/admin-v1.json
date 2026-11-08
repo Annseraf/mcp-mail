@@ -1893,6 +1893,8 @@
           "accounts",
           "sendEnabled",
           "sendMode",
+          "paused",
+          "pausedAt",
           "status",
           "createdAt",
           "rotatedAt",
@@ -1925,6 +1927,14 @@
           "sendMode": {
             "enum": ["direct", "approval"],
             "description": "approval: send_message saves the message to Drafts and waits for the owner (see /approvals)"
+          },
+          "paused": {
+            "type": "boolean",
+            "description": "Every tool call is refused (audit reason client-paused) until resumed"
+          },
+          "pausedAt": {
+            "type": ["string", "null"],
+            "format": "date-time"
           },
           "status": {
             "enum": ["active", "revoked"]
@@ -2001,6 +2011,10 @@
           "sendMode": {
             "enum": ["direct", "approval"],
             "description": "approval: send_message saves the message to Drafts and waits for the owner (see /approvals)"
+          },
+          "paused": {
+            "type": "boolean",
+            "description": "Pause (true) or resume (false); keeps the token"
           }
         }
       },
