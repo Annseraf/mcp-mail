@@ -465,6 +465,35 @@ export class ImapClient {
     await client.append(mailbox, raw, flags);
   }
 
+  /**
+   * The folder to use for a configured name and its special use: the name if
+   * it exists, else the server's folder flagged with that use (\\Drafts,
+   * \\Sent), else the name created as a new folder. Servers name these
+   * differently ("Drafts", "[Gmail]/Drafts", "Entwürfe") and a few start with
+   * none at all.
+   */
+  async resolveFolder(name: string, specialUse: "\\Drafts" | "\\Sent"): Promise<string> {
+    const boxes = await this.listMailboxes();
+    if (boxes.some((m) => m.path === name)) return name;
+    const special = boxes.find((m) => m.specialUse === specialUse);
+    if (special) return special.path;
+    const client = await this.ensureConnected();
+    await client.mailboxCreate(name);
+    return name;
+  }
+
+  /** Append to a configured Drafts or Sent folder (see resolveFolder); returns the folder used. */
+  async appendTo(
+    name: string,
+    specialUse: "\\Drafts" | "\\Sent",
+    raw: string | Buffer,
+    flags: string[],
+  ): Promise<string> {
+    const folder = await this.resolveFolder(name, specialUse);
+    await this.append(folder, raw, flags);
+    return folder;
+  }
+
   private async fetchRange(
     client: ImapFlow,
     range: string,

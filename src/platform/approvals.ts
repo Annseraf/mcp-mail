@@ -128,14 +128,16 @@ export class ApprovalStore {
     const raw = await clients.smtp.buildRawSource(msg, { keepBcc: true });
     const messageId = /^message-id:\s*(<[^>\r\n]+>)/im.exec(raw.toString("latin1"))?.[1];
     if (!messageId) throw new Error("Couldn't prepare the message for approval.");
-    await clients.imap.append(clients.draftsFolder, raw, ["\\Draft"]);
+    const draftsFolder = await clients.imap.appendTo(clients.draftsFolder, "\\Drafts", raw, [
+      "\\Draft",
+    ]);
     const created = new Date();
     const rec: ApprovalRecord = {
       id: `ap-${randomBytes(6).toString("hex")}`,
       clientId,
       account,
       draftMessageId: messageId,
-      draftsFolder: clients.draftsFolder,
+      draftsFolder,
       status: "pending",
       createdAt: created.toISOString(),
       expiresAt: new Date(created.getTime() + this.settings.ttlMs).toISOString(),
@@ -195,7 +197,7 @@ export class ApprovalStore {
       await clients.smtp.send(msg);
       if (clients.sentFolder) {
         const copy = await clients.smtp.buildRawSource(msg);
-        await clients.imap.append(clients.sentFolder, copy, ["\\Seen"]).catch(() => {});
+        await clients.imap.appendTo(clients.sentFolder, "\\Sent", copy, ["\\Seen"]).catch(() => {});
       }
       await clients.imap.deleteMessage(rec.draftsFolder, draft.uid).catch(() => {});
     } catch (err) {
