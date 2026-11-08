@@ -145,7 +145,7 @@ export function guardTenantTools(server: McpServer, ctx: TenantContext, audit: A
       if (client.paused) {
         return {
           reason: "client-paused",
-          text: "This client is paused by the account owner. Nothing was done; ask them to resume it.",
+          text: "Email access for this app is paused by the account owner. No action was taken. Tell the user they can resume it where they manage this connection.",
         };
       }
       if ((await audit.callsToday(tenant.id)) >= tenant.limits.toolCallsPerDay) {
