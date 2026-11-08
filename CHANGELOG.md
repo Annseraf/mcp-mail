@@ -2,6 +2,13 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.2.1](https://github.com/Annseraf/mcp-mail/compare/v1.2.0...v1.2.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* find or create the Drafts and Sent folders instead of failing ([#38](https://github.com/Annseraf/mcp-mail/issues/38)) ([36b317e](https://github.com/Annseraf/mcp-mail/commit/36b317ec688e106fca23e2a7ccd9d05c39d210dd))
+
 ## [1.2.0](https://github.com/Annseraf/mcp-mail/compare/v1.1.0...v1.2.0) (2026-11-08)
 
 
