@@ -132,6 +132,7 @@ const clientPatch = z.object({
   accounts: z.array(objectId).max(1000).nullable().optional(),
   sendEnabled: z.boolean().optional(),
   sendMode: z.enum(["direct", "approval"]).optional(),
+  paused: z.boolean().optional(),
 });
 
 function parse<T extends z.ZodType>(schema: T, body: unknown): z.infer<T> {
@@ -173,6 +174,8 @@ const clientView = (c: ClientRecord) => ({
   accounts: c.accounts ?? null,
   sendEnabled: c.sendEnabled,
   sendMode: c.sendMode ?? "direct",
+  paused: Boolean(c.paused),
+  pausedAt: c.pausedAt ?? null,
   status: c.status,
   createdAt: c.createdAt,
   rotatedAt: c.rotatedAt ?? null,
@@ -495,6 +498,10 @@ export function createAdminApp(d: AdminDeps): Express {
         if (b.accounts !== undefined) c.accounts = b.accounts ?? undefined;
         if (b.sendEnabled !== undefined) c.sendEnabled = b.sendEnabled;
         if (b.sendMode !== undefined) c.sendMode = b.sendMode;
+        if (b.paused !== undefined && b.paused !== Boolean(c.paused)) {
+          c.paused = b.paused || undefined;
+          c.pausedAt = b.paused ? now() : undefined;
+        }
         view = clientView(c);
       });
       res.json(view);

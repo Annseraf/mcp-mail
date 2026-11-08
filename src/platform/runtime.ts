@@ -142,6 +142,12 @@ export function guardTenantTools(server: McpServer, ctx: TenantContext, audit: A
       if (tenant.status !== "active") {
         return { reason: "tenant-suspended", text: "This account is suspended. Contact support." };
       }
+      if (client.paused) {
+        return {
+          reason: "client-paused",
+          text: "This client is paused by the account owner. Nothing was done; ask them to resume it.",
+        };
+      }
       if ((await audit.callsToday(tenant.id)) >= tenant.limits.toolCallsPerDay) {
         return {
           reason: "daily-limit",
