@@ -2,6 +2,18 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.2.0](https://github.com/Annseraf/mcp-mail/compare/v1.1.0...v1.2.0) (2026-11-08)
+
+
+### Features
+
+* pause a client without revoking it ([#35](https://github.com/Annseraf/mcp-mail/issues/35)) ([4ec5d0d](https://github.com/Annseraf/mcp-mail/commit/4ec5d0dcd4d8b693b787da811e06783b04b0047b))
+
+
+### Bug Fixes
+
+* plainer message for a paused client ([#37](https://github.com/Annseraf/mcp-mail/issues/37)) ([8f86575](https://github.com/Annseraf/mcp-mail/commit/8f865754be53a8a589d2d7a8cdafe9155ff161ee))
+
 ## [1.1.0](https://github.com/Annseraf/mcp-mail/compare/v1.0.2...v1.1.0) (2026-11-07)
 
 
