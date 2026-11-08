@@ -367,6 +367,25 @@ describe("platform: multi-tenant mode and admin API", () => {
     expect((await call(B, tokenB, "list_accounts")).isError ?? false).toBe(false);
   });
 
+  it("falls back to the server's Drafts folder when the configured one is missing", async () => {
+    // The configured name doesn't exist; the server's Drafts folder does, so the
+    // draft goes there instead of failing (with no Drafts at all, it's created).
+    const patched = await admin("PATCH", `/tenants/${A}/mailboxes/main`, {
+      mail: { draftsFolder: `Entwurf-${Date.now()}` },
+    });
+    expect(patched.status, JSON.stringify(patched.body)).toBe(200);
+    const subject = `missing drafts ${Date.now()}`;
+    const r = await call(A, tokenA, "create_draft", {
+      to: "someone@example.com",
+      subject,
+      text: "hi",
+    });
+    expect(r.isError ?? false, r.content[0].text).toBe(false);
+    expect(JSON.parse(r.content[0].text).folder).toBe("Drafts");
+    expect(await findMail(mail.users.alice, "Drafts", subject)).toHaveLength(1);
+    await admin("PATCH", `/tenants/${A}/mailboxes/main`, { mail: { draftsFolder: "Drafts" } });
+  });
+
   it("pauses and resumes a client without revoking it", async () => {
     const paused = await admin("PATCH", `/tenants/${B}/clients/agent`, { paused: true });
     expect(paused.body.paused).toBe(true);

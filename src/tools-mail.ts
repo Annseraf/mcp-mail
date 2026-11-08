@@ -337,7 +337,7 @@ export function registerMailTools(
             references: args.references,
             attachments: attachmentsOf(args.attachments),
           });
-          await imap.append(sentFolder, raw, ["\\Seen"]);
+          await imap.appendTo(sentFolder, "\\Sent", raw, ["\\Seen"]);
           savedToSent = true;
         } catch {
           // Sent-folder copy is best effort; the actual send already succeeded.
@@ -412,10 +412,10 @@ export function registerMailTools(
         references,
         attachments: attachmentsOf(args.attachments),
       });
-      await imap.append(draftsFolder, raw, ["\\Draft", "\\Seen"]);
+      const folder = await imap.appendTo(draftsFolder, "\\Drafts", raw, ["\\Draft", "\\Seen"]);
       return asJson({
         success: true,
-        folder: draftsFolder,
+        folder,
         bytes: raw.length,
         to,
         subject,
