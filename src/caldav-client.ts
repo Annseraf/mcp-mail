@@ -12,6 +12,7 @@
 import { createDAVClient, DAVCalendar, DAVCalendarObject } from "tsdav";
 import ICAL from "ical.js";
 import { randomUUID } from "node:crypto";
+import { createGuardedFetch, OutboundBlockedError, OutboundPolicy } from "./outbound.js";
 
 // createDAVClient returns a logged-in client whose type omits the login
 // methods. Capture that shape for our field types.
@@ -67,15 +68,19 @@ export class CalDavClient {
   private client: AuthedDAVClient | null = null;
   private connecting: Promise<AuthedDAVClient> | null = null;
   private readonly auth: CalDavAuth;
+  private readonly outbound?: OutboundPolicy;
 
-  constructor(auth: CalDavAuth) {
+  constructor(auth: CalDavAuth, opts: { outbound?: OutboundPolicy } = {}) {
     this.auth = auth;
+    this.outbound = opts.outbound;
   }
 
   private async ensureClient(): Promise<AuthedDAVClient> {
     if (this.client) return this.client;
     if (this.connecting) return this.connecting;
     this.connecting = (async (): Promise<AuthedDAVClient> => {
+      // tsdav replaces a failed discovery with a generic error, so keep the guard's refusal.
+      let refusal: OutboundBlockedError | undefined;
       const client = await createDAVClient({
         serverUrl: this.auth.url,
         credentials: {
@@ -84,11 +89,24 @@ export class CalDavClient {
         },
         authMethod: "Basic",
         defaultAccountType: "caldav",
+        ...(this.outbound
+          ? {
+              fetch: createGuardedFetch(this.outbound, {
+                allowedOrigin: new URL(this.auth.url).origin,
+                onRefusal: (err) => {
+                  refusal = err;
+                },
+              }),
+            }
+          : {}),
+      }).catch((err: unknown) => {
+        throw refusal ?? err;
       });
       this.client = client;
-      this.connecting = null;
       return client;
-    })();
+    })().finally(() => {
+      this.connecting = null;
+    });
     return this.connecting;
   }
 

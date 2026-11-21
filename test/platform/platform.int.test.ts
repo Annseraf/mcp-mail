@@ -174,6 +174,7 @@ describe("platform: multi-tenant mode and admin API", () => {
       adminHost: "127.0.0.1",
       adminPort: 0,
       adminToken: ADMIN_TOKEN,
+      allowPrivateMailHosts: true, // GreenMail is a local fixture.
       approvals: {
         ttlMs: 3_600_000,
         webhookUrl: "https://product.example.com/hooks/approvals",

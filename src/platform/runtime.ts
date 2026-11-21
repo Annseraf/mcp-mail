@@ -8,6 +8,7 @@ import { StaticAccounts, type Account } from "../accounts.js";
 import { ClientPool, type AccountClients, type PoolLike } from "../client-pool.js";
 import { capabilityOf, PRESETS } from "../policy/capabilities.js";
 import { guardTools, recipientsOf, type Denial } from "../policy/guard.js";
+import type { OutboundPolicy } from "../outbound.js";
 import type { AuditLog } from "./audit.js";
 import type { SecretStore } from "./secrets.js";
 import type { ClientRecord, ConfigProvider, MailboxRecord, TenantRecord } from "./tenants.js";
@@ -38,11 +39,13 @@ type Log = (
 export class TenantRuntime {
   private readonly cache = new Map<string, TenantCache>();
 
+  /** Passed to every tenant pool; undefined leaves tenant hosts unchecked (ALLOW_PRIVATE_MAIL_HOSTS). */
   constructor(
     private readonly config: ConfigProvider,
     private readonly secrets: SecretStore,
     readonly audit: AuditLog,
     private readonly log: Log,
+    private readonly outbound?: OutboundPolicy,
   ) {}
 
   /** Authenticate a bearer token against exactly one tenant. Returns undefined on any mismatch. */
@@ -72,7 +75,11 @@ export class TenantRuntime {
         });
     }
     const set = new StaticAccounts(accounts);
-    return { revision: tenant.revision, accounts: set, pool: new ClientPool(set) };
+    return {
+      revision: tenant.revision,
+      accounts: set,
+      pool: new ClientPool(set, { outbound: this.outbound }),
+    };
   }
 
   private async toAccount(tenantId: string, m: MailboxRecord): Promise<Account | undefined> {

@@ -11,6 +11,7 @@
 
 import { ImapFlow, ImapFlowOptions, FetchMessageObject } from "imapflow";
 import { simpleParser, ParsedMail } from "mailparser";
+import { OutboundPolicy, resolveConnectTarget } from "./outbound.js";
 
 export interface ImapAuth {
   host: string;
@@ -93,8 +94,12 @@ export class ImapClient {
   private client: ImapFlow | null = null;
   private connecting: Promise<ImapFlow> | null = null;
   private readonly opts: ImapFlowOptions;
+  private readonly host: string;
+  private readonly outbound?: OutboundPolicy;
 
-  constructor(auth: ImapAuth) {
+  constructor(auth: ImapAuth, opts: { outbound?: OutboundPolicy } = {}) {
+    this.host = auth.host;
+    this.outbound = opts.outbound;
     this.opts = {
       host: auth.host,
       port: auth.port,
@@ -108,16 +113,19 @@ export class ImapClient {
     if (this.client && this.client.usable) return this.client;
     if (this.connecting) return this.connecting;
     this.connecting = (async (): Promise<ImapFlow> => {
-      const client = new ImapFlow(this.opts);
+      // Each connect validates the host again and dials the validated address.
+      const target = await resolveConnectTarget(this.host, this.outbound);
+      const client = new ImapFlow({ ...this.opts, ...target });
       client.on("error", () => {
         // Mark unusable so next call reconnects.
         if (this.client === client) this.client = null;
       });
       await client.connect();
       this.client = client;
-      this.connecting = null;
       return client;
-    })();
+    })().finally(() => {
+      this.connecting = null;
+    });
     return this.connecting;
   }
 

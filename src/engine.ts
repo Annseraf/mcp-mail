@@ -30,6 +30,7 @@ import { guardTools, type ClientPolicy } from "./policy/guard.js";
 import { buildMcpServer } from "./mcp-server.js";
 import { buildInfo } from "./version.js";
 import { createAdminApp } from "./admin/api.js";
+import { tenantOutboundPolicy } from "./outbound.js";
 import { AuditLog, StdoutAudit, type AuditSink } from "./platform/audit.js";
 import { OciKmsKeyProvider } from "./platform/oci-kms.js";
 import { guardTenantTools, TenantRuntime, type TenantContext } from "./platform/runtime.js";
@@ -121,7 +122,7 @@ async function buildPlatform(o: EngineOptions): Promise<Platform> {
     config,
     secrets,
     audit,
-    runtime: new TenantRuntime(config, secrets, audit, o.log),
+    runtime: new TenantRuntime(config, secrets, audit, o.log, tenantOutboundPolicy(s)),
     approvals: new ApprovalStore(
       path.join(s.dataDir, "approvals"),
       s.approvals ?? { ttlMs: 24 * 3_600_000 },
@@ -417,6 +418,7 @@ export async function createEngine(o: EngineOptions): Promise<Engine> {
         tenantBaseUrl: o.platform.tenantBaseUrl,
         platform: p,
         log,
+        outbound: tenantOutboundPolicy(o.platform),
       });
     }
   }

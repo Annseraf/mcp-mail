@@ -9,6 +9,7 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import { z } from "zod";
 import { ImapClient } from "../imap-client.js";
 import { SmtpClient } from "../smtp-client.js";
+import type { OutboundPolicy } from "../outbound.js";
 import { buildInfo } from "../version.js";
 import { PRESETS } from "../policy/capabilities.js";
 import type { Platform } from "../engine.js";
@@ -35,6 +36,8 @@ export interface AdminDeps {
   tenantBaseUrl: string;
   platform: Platform;
   log: Log;
+  /** Guards the mailbox test's hosts; undefined only with ALLOW_PRIVATE_MAIL_HOSTS. */
+  outbound?: OutboundPolicy;
 }
 
 class HttpError extends Error {
@@ -333,7 +336,7 @@ export function createAdminApp(d: AdminDeps): Express {
     h(async (req, res) => {
       await tenantOr404(String(req.params.id));
       const b = parse(mailboxTest, req.body);
-      res.json(await testMailbox(b.imap, b.smtp));
+      res.json(await testMailbox(b.imap, b.smtp, d.outbound));
     }),
   );
   r.post(
@@ -678,20 +681,23 @@ export function createAdminApp(d: AdminDeps): Express {
 type EndpointIn = z.infer<typeof endpointIn>;
 
 /** Connect and authenticate without saving anything. Errors never echo credentials. */
-async function testMailbox(imap: EndpointIn, smtp: EndpointIn) {
+async function testMailbox(imap: EndpointIn, smtp: EndpointIn, outbound?: OutboundPolicy) {
   const scrub = (msg: string) =>
     msg.split(imap.password).join("***").split(smtp.password).join("***").slice(0, 300);
   const result: { imap: { ok: boolean; error?: string }; smtp: { ok: boolean; error?: string } } = {
     imap: { ok: false },
     smtp: { ok: false },
   };
-  const ic = new ImapClient({
-    host: imap.host,
-    port: imap.port,
-    user: imap.user,
-    pass: imap.password,
-    secure: imap.tls,
-  });
+  const ic = new ImapClient(
+    {
+      host: imap.host,
+      port: imap.port,
+      user: imap.user,
+      pass: imap.password,
+      secure: imap.tls,
+    },
+    { outbound },
+  );
   try {
     await ic.listMailboxes();
     result.imap.ok = true;
@@ -703,6 +709,7 @@ async function testMailbox(imap: EndpointIn, smtp: EndpointIn) {
   const sc = new SmtpClient(
     { host: smtp.host, port: smtp.port, user: smtp.user, pass: smtp.password, secure: smtp.tls },
     { from: smtp.user },
+    { outbound },
   );
   try {
     await sc.verify();

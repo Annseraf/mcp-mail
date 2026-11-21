@@ -11,6 +11,7 @@ import { ImapClient } from "./imap-client.js";
 import { SmtpClient } from "./smtp-client.js";
 import { CalDavClient } from "./caldav-client.js";
 import { Account, AccountSource } from "./accounts.js";
+import { OutboundPolicy } from "./outbound.js";
 
 export interface AccountClients {
   imap: ImapClient;
@@ -27,10 +28,13 @@ export interface PoolLike {
 
 export class ClientPool implements PoolLike {
   private readonly store: AccountSource;
+  private readonly outbound?: OutboundPolicy;
   private pool: Map<string, AccountClients> = new Map();
 
-  constructor(store: AccountSource) {
+  /** With `outbound`, every host this pool dials is validated first (see outbound.ts). */
+  constructor(store: AccountSource, opts: { outbound?: OutboundPolicy } = {}) {
     this.store = store;
+    this.outbound = opts.outbound;
   }
 
   /**
@@ -62,13 +66,17 @@ export class ClientPool implements PoolLike {
   }
 
   private build(account: Account): AccountClients {
-    const imap = new ImapClient({
-      host: account.imap.host,
-      port: account.imap.port,
-      user: account.imap.user,
-      pass: account.imap.pass,
-      secure: account.imap.tls,
-    });
+    const outbound = { outbound: this.outbound };
+    const imap = new ImapClient(
+      {
+        host: account.imap.host,
+        port: account.imap.port,
+        user: account.imap.user,
+        pass: account.imap.pass,
+        secure: account.imap.tls,
+      },
+      outbound,
+    );
     const smtp = new SmtpClient(
       {
         host: account.smtp.host,
@@ -81,13 +89,17 @@ export class ClientPool implements PoolLike {
         from: account.mail.defaultFrom,
         fromName: account.mail.defaultFromName || undefined,
       },
+      outbound,
     );
     const caldav = account.caldav
-      ? new CalDavClient({
-          url: account.caldav.url,
-          user: account.caldav.user,
-          pass: account.caldav.pass,
-        })
+      ? new CalDavClient(
+          {
+            url: account.caldav.url,
+            user: account.caldav.user,
+            pass: account.caldav.pass,
+          },
+          outbound,
+        )
       : null;
     return {
       imap,
