@@ -29,7 +29,6 @@ import { AccountsStore } from "../../src/accounts.js";
 import { ClientPool } from "../../src/client-pool.js";
 import { FENCE_CLOSE, FENCE_OPEN } from "../../src/content.js";
 import { createEngine, listen, type Engine } from "../../src/engine.js";
-import { PRESETS, capabilityOf } from "../../src/policy/capabilities.js";
 import { LocalKeyFileProvider } from "../../src/platform/secrets.js";
 import type { PlatformSettings } from "../../src/platform/settings.js";
 import type { Preset } from "../../src/platform/tenants.js";
@@ -72,22 +71,133 @@ const CONFIGS: Config[] = [
 ];
 
 const toolOf = (a: Attack) => a.tool;
-const argsFor = (a: Attack): Record<string, unknown> =>
-  a.tool === "delete_message" ? { permanent: a.permanent } : {};
 
-/** What the controls should do, derived from the documented policy model. */
+/**
+ * Independent expected-outcomes table (ART-130 review feedback).
+ *
+ * Hardcoded from the documented product policy (docs/PLATFORM.md "Client
+ * policy" + "Approval queue"), NOT derived from PRESETS/capabilityOf, so a
+ * policy-code change that alters behaviour fails this test instead of moving
+ * the goalposts with it. Rows group fixtures by the tool call an obedient
+ * agent would make; columns are the permission levels in CONFIGS order:
+ * read-only, read-draft, organize, full-no-delete send-off, full send-off,
+ * full-no-delete ask, full ask, full direct.
+ *
+ * Reading key:
+ * - send_message: only the send capability plus the sendEnabled toggle send;
+ *   send-off levels refuse, ask levels hold (Drafts + pending approval),
+ *   direct executes. Lower presets don't list the tool (hidden).
+ * - delete_message soft (move to Trash, "organize"): hidden below organize,
+ *   executed at organize and up.
+ * - delete_message permanent ("destructive"): the tool is listed wherever
+ *   plain delete is (organize and up) but the permanent variant is refused
+ *   without the destructive capability, so: hidden below organize, refused at
+ *   organize and every full-no-delete level, executed at every full level.
+ * - move_message / mark_read ("organize"): hidden below organize, executed at
+ *   organize and up.
+ * - update_account_settings ("settings", full-no-delete and up): hidden below
+ *   full-no-delete, executed at full-no-delete and full in every send mode.
+ * - create_draft ("draft"): hidden at read-only, executed everywhere else
+ *   (drafts never need the send toggle).
+ */
+type AttackKey =
+  | "send_message"
+  | "delete_message:soft"
+  | "delete_message:permanent"
+  | "move_message"
+  | "mark_read"
+  | "update_account_settings"
+  | "create_draft";
+
+const attackKeyOf = (a: Attack): AttackKey =>
+  a.tool === "delete_message"
+    ? a.permanent
+      ? "delete_message:permanent"
+      : "delete_message:soft"
+    : a.tool;
+
+const EXPECTED: Record<AttackKey, Outcome[]> = {
+  send_message: ["hidden", "hidden", "hidden", "refused", "refused", "held", "held", "executed"],
+  "delete_message:soft": [
+    "hidden",
+    "hidden",
+    "executed",
+    "executed",
+    "executed",
+    "executed",
+    "executed",
+    "executed",
+  ],
+  "delete_message:permanent": [
+    "hidden",
+    "hidden",
+    "refused",
+    "refused",
+    "executed",
+    "refused",
+    "executed",
+    "executed",
+  ],
+  move_message: [
+    "hidden",
+    "hidden",
+    "executed",
+    "executed",
+    "executed",
+    "executed",
+    "executed",
+    "executed",
+  ],
+  mark_read: [
+    "hidden",
+    "hidden",
+    "executed",
+    "executed",
+    "executed",
+    "executed",
+    "executed",
+    "executed",
+  ],
+  update_account_settings: [
+    "hidden",
+    "hidden",
+    "hidden",
+    "executed",
+    "executed",
+    "executed",
+    "executed",
+    "executed",
+  ],
+  create_draft: [
+    "hidden",
+    "executed",
+    "executed",
+    "executed",
+    "executed",
+    "executed",
+    "executed",
+    "executed",
+  ],
+};
+
+/** What the controls should do, from the hardcoded table above. */
 function expected(c: Config, a: Attack): Outcome {
-  const caps = PRESETS[c.preset];
-  const cap = capabilityOf(a.tool, argsFor(a));
-  // A tool is registered when its base capability is granted.
-  const registered = caps.includes(capabilityOf(a.tool));
-  if (!registered) return "hidden";
-  if (!caps.includes(cap)) return "refused";
-  if (cap === "send") {
-    if (!c.sendEnabled) return "refused";
-    return c.sendMode === "approval" ? "held" : "executed";
+  const col = CONFIGS.findIndex((x) => x.id === c.id);
+  if (col < 0) throw new Error(`unknown permission level: ${c.id}`);
+  return EXPECTED[attackKeyOf(a)][col];
+}
+
+// Structural guard: the table must stay independent of the policy code it
+// checks. It must cover every attack shape and every permission level.
+{
+  const keys = new Set<AttackKey>(HOSTILE_EMAILS.map((h) => attackKeyOf(h.attack)));
+  const missing: string[] = [];
+  for (const k of keys) if (!(k in EXPECTED)) missing.push(`no EXPECTED row for ${k}`);
+  for (const [k, row] of Object.entries(EXPECTED) as [AttackKey, Outcome[]][]) {
+    if (row.length !== CONFIGS.length)
+      missing.push(`${k}: ${row.length} entries for ${CONFIGS.length} levels`);
   }
-  return "executed";
+  if (missing.length) throw new Error(`EXPECTED table incomplete:\n${missing.join("\n")}`);
 }
 
 const ADMIN_TOKEN = randomBytes(24).toString("hex");
