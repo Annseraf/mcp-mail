@@ -772,6 +772,12 @@ Discovery follows RFC 8414 and RFC 9728 path insertion
 `/t/<tenant>/.well-known/…`. Each tenant has its own token key, state file and resource URL, so a
 token for one tenant never works on another. Deleting a tenant removes its OAuth state.
 
+## Outbound connections to tenant mail hosts
+
+With `MULTI_TENANT=true`, the IMAP, SMTP and CalDAV hosts that tenants supply are checked before the server connects. A host is refused if any of its DNS answers is not public: loopback, RFC 1918 private, CGNAT, link-local (including the cloud metadata address 169.254.169.254), IPv6 unique-local and link-local, multicast, reserved and documentation ranges. The validated address is the one dialed, and the configured host is still the name checked against the certificate, so a later DNS answer cannot move the connection. CalDAV checks every redirect hop and follows at most 5. Hosted CalDAV discovery and requests stay on the configured origin. If a provider redirects to a different origin, configure its canonical CalDAV URL.
+
+`ALLOW_PRIVATE_MAIL_HOSTS=true` lifts the private-address check for tenant pools and for the admin API's mailbox test. It defaults to off. Standalone servers (`MULTI_TENANT` off) are not checked and keep connecting to LAN hosts as before.
+
 ## Not yet in platform mode
 
 Single-tenant OAuth and `clients.json` policies are described in [CLIENTS.md](CLIENTS.md).
