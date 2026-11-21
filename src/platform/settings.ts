@@ -21,6 +21,11 @@ export interface PlatformSettings {
   adminHost: string;
   adminPort: number;
   adminToken?: string;
+  /**
+   * Tenant mailboxes may point at private or loopback hosts (ALLOW_PRIVATE_MAIL_HOSTS=true).
+   * Default false: MULTI_TENANT pools refuse non-public hosts (see outbound.ts).
+   */
+  allowPrivateMailHosts?: boolean;
   /** Approval queue ("ask me before sending"): expiry and an optional webhook to the product. */
   approvals?: { ttlMs: number; webhookUrl?: string; webhookSecret?: string };
   /** OAuth for tenant endpoints with login delegated to the product (TENANT_OAUTH=true). */
@@ -77,6 +82,7 @@ export function loadPlatformSettings(
     adminHost: env.ADMIN_HOST?.trim() || "127.0.0.1",
     adminPort: Number(env.ADMIN_PORT ?? 3330),
     adminToken: secret(env, "ADMIN_TOKEN"),
+    allowPrivateMailHosts: flag(env.ALLOW_PRIVATE_MAIL_HOSTS),
     approvals: {
       ttlMs: Number(env.APPROVAL_TTL_HOURS ?? 24) * 3_600_000,
       webhookUrl: env.APPROVAL_WEBHOOK_URL?.trim() || undefined,

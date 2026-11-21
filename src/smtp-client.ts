@@ -6,6 +6,7 @@
  */
 
 import nodemailer, { Transporter, SendMailOptions } from "nodemailer";
+import { ConnectTarget, OutboundPolicy, resolveConnectTarget } from "./outbound.js";
 
 export interface SmtpAuth {
   host: string;
@@ -13,6 +14,20 @@ export interface SmtpAuth {
   user: string;
   pass: string;
   secure: boolean;
+}
+
+/** Transport options for a target. A pinned target keeps the configured name for TLS. */
+export function smtpTransportOptions(
+  auth: SmtpAuth,
+  target: ConnectTarget,
+): Parameters<typeof nodemailer.createTransport>[0] {
+  return {
+    host: target.host,
+    port: auth.port,
+    secure: auth.secure,
+    auth: { user: auth.user, pass: auth.pass },
+    ...(target.servername ? { tls: { servername: target.servername } } : {}),
+  };
 }
 
 export interface SmtpDefaults {
@@ -45,31 +60,29 @@ export interface SendResult {
 }
 
 export class SmtpClient {
-  private readonly transporter: Transporter;
+  /** Shared transport. Null when guarded: each use validates the host and builds its own. */
+  private readonly transporter: Transporter | null;
   private readonly defaults: SmtpDefaults;
+  private readonly auth: SmtpAuth;
+  private readonly outbound?: OutboundPolicy;
 
-  constructor(auth: SmtpAuth, defaults: SmtpDefaults) {
-    this.transporter = nodemailer.createTransport({
-      host: auth.host,
-      port: auth.port,
-      secure: auth.secure,
-      auth: { user: auth.user, pass: auth.pass },
-    });
+  constructor(auth: SmtpAuth, defaults: SmtpDefaults, opts: { outbound?: OutboundPolicy } = {}) {
+    this.auth = auth;
+    this.outbound = opts.outbound;
+    this.transporter = this.outbound
+      ? null
+      : nodemailer.createTransport(smtpTransportOptions(auth, { host: auth.host }));
     this.defaults = defaults;
   }
 
   /** Connect and authenticate without sending (used by the admin API's mailbox test). */
   async verify(): Promise<void> {
-    try {
-      await this.transporter.verify();
-    } finally {
-      this.transporter.close();
-    }
+    await this.withTransport((transporter) => transporter.verify(), true);
   }
 
   async send(msg: OutgoingMessage): Promise<SendResult> {
     const mail = this.toMailOptions(msg);
-    const info = await this.transporter.sendMail(mail);
+    const info = await this.withTransport((transporter) => transporter.sendMail(mail));
     return {
       messageId: info.messageId,
       accepted: (info.accepted ?? []).map(String),
@@ -96,6 +109,32 @@ export class SmtpClient {
         else resolve(message);
       });
     });
+  }
+
+  /**
+   * Run one use of a transporter. Unguarded clients reuse the shared one, and
+   * close it only when `closeAfter` is set (verify). Guarded clients validate the
+   * host now and dial the validated address for this use only, so a later DNS
+   * answer cannot redirect the connection. They always close their own transporter.
+   */
+  private async withTransport<T>(
+    use: (transporter: Transporter) => Promise<T>,
+    closeAfter = false,
+  ): Promise<T> {
+    if (this.transporter) {
+      try {
+        return await use(this.transporter);
+      } finally {
+        if (closeAfter) this.transporter.close();
+      }
+    }
+    const target = await resolveConnectTarget(this.auth.host, this.outbound);
+    const transporter = nodemailer.createTransport(smtpTransportOptions(this.auth, target));
+    try {
+      return await use(transporter);
+    } finally {
+      transporter.close();
+    }
   }
 
   private toMailOptions(msg: OutgoingMessage): SendMailOptions {
