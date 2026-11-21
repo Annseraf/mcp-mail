@@ -124,6 +124,8 @@ const clientCreate = z.object({
   preset: preset.default("read-draft"),
   accounts: z.array(objectId).max(1000).optional(),
   sendEnabled: z.boolean().default(false),
+  calendarReadEnabled: z.boolean().default(false),
+  calendarWriteEnabled: z.boolean().default(false),
   sendMode: z.enum(["direct", "approval"]).default("direct"),
 });
 const clientPatch = z.object({
@@ -131,6 +133,8 @@ const clientPatch = z.object({
   preset: preset.optional(),
   accounts: z.array(objectId).max(1000).nullable().optional(),
   sendEnabled: z.boolean().optional(),
+  calendarReadEnabled: z.boolean().optional(),
+  calendarWriteEnabled: z.boolean().optional(),
   sendMode: z.enum(["direct", "approval"]).optional(),
   paused: z.boolean().optional(),
 });
@@ -173,6 +177,8 @@ const clientView = (c: ClientRecord) => ({
   preset: c.preset,
   accounts: c.accounts ?? null,
   sendEnabled: c.sendEnabled,
+  calendarReadEnabled: c.calendarReadEnabled === true,
+  calendarWriteEnabled: c.calendarWriteEnabled === true,
   sendMode: c.sendMode ?? "direct",
   paused: Boolean(c.paused),
   pausedAt: c.pausedAt ?? null,
@@ -455,6 +461,8 @@ export function createAdminApp(d: AdminDeps): Express {
         preset: b.preset,
         accounts: b.accounts,
         sendEnabled: b.sendEnabled,
+        calendarReadEnabled: b.calendarReadEnabled,
+        calendarWriteEnabled: b.calendarWriteEnabled,
         sendMode: b.sendMode,
         tokenHash: hash,
         status: "active",
@@ -497,6 +505,8 @@ export function createAdminApp(d: AdminDeps): Express {
         if (b.preset !== undefined) c.preset = b.preset;
         if (b.accounts !== undefined) c.accounts = b.accounts ?? undefined;
         if (b.sendEnabled !== undefined) c.sendEnabled = b.sendEnabled;
+        if (b.calendarReadEnabled !== undefined) c.calendarReadEnabled = b.calendarReadEnabled;
+        if (b.calendarWriteEnabled !== undefined) c.calendarWriteEnabled = b.calendarWriteEnabled;
         if (b.sendMode !== undefined) c.sendMode = b.sendMode;
         if (b.paused !== undefined && b.paused !== Boolean(c.paused)) {
           c.paused = b.paused || undefined;

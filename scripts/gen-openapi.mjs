@@ -28,6 +28,14 @@ const sendMode = {
   description:
     "approval: send_message saves the message to Drafts and waits for the owner (see /approvals)",
 };
+const calendarReadEnabled = {
+  type: "boolean",
+  description: "Allows calendar reads within the hosted client's preset",
+};
+const calendarWriteEnabled = {
+  type: "boolean",
+  description: "Allows calendar event creation within the hosted client's preset",
+};
 const common = { 401: err("Missing or invalid service token") };
 const withTenant = { ...common, 404: err("Tenant not found") };
 const body = (schema) => ({ required: true, content: { "application/json": { schema } } });
@@ -479,6 +487,8 @@ const spec = {
           "preset",
           "accounts",
           "sendEnabled",
+          "calendarReadEnabled",
+          "calendarWriteEnabled",
           "sendMode",
           "paused",
           "pausedAt",
@@ -501,6 +511,8 @@ const spec = {
             description: "null = all mailboxes",
           },
           sendEnabled: { type: "boolean" },
+          calendarReadEnabled,
+          calendarWriteEnabled,
           sendMode,
           paused: {
             type: "boolean",
@@ -524,6 +536,8 @@ const spec = {
           preset: { ...ref("Preset"), default: "read-draft" },
           accounts: { type: "array", items: ref("ObjectId") },
           sendEnabled: { type: "boolean", default: false },
+          calendarReadEnabled: { ...calendarReadEnabled, default: false },
+          calendarWriteEnabled: { ...calendarWriteEnabled, default: false },
           sendMode: { ...sendMode, default: "direct" },
         },
       },
@@ -535,6 +549,8 @@ const spec = {
           preset: ref("Preset"),
           accounts: { type: ["array", "null"], items: ref("ObjectId") },
           sendEnabled: { type: "boolean" },
+          calendarReadEnabled,
+          calendarWriteEnabled,
           sendMode,
           paused: {
             type: "boolean",
