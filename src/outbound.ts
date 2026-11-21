@@ -300,6 +300,7 @@ export function createGuardedFetch(
       if (options.allowedOrigin && url.origin !== options.allowedOrigin) {
         throw new OutboundBlockedError("CalDAV destination differs from the configured origin");
       }
+      init.signal?.throwIfAborted();
       const pinned = await pinDestination(url.hostname, policy);
       const response = await transport({
         url,
