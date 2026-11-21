@@ -664,6 +664,12 @@ tenant's `allowSend` and the client's own `sendEnabled` toggle, which is off by 
 | `full-no-delete` | + send, calendar-write       |
 | `full`           | + destructive (delete)       |
 
+**Calendar access.** Hosted clients also need `calendarReadEnabled` for discovery, event
+listing and free-slot lookup, or `calendarWriteEnabled` to create events. Both settings default
+to false, including for existing clients, and neither can expand the preset. Calls to tools
+available under the preset are audited as `calendar-read-disabled` or `calendar-write-disabled`
+when the corresponding setting is off.
+
 **Pause.** `PATCH /tenants/{id}/clients/{clientId}` with `{"paused": true}` stops a client
 without revoking it: its token and settings stay, it still sees its tools, and every call is
 refused with a clear message (audit reason `client-paused`) until `{"paused": false}`. Use it as

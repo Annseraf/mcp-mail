@@ -46,6 +46,9 @@ export interface ClientRecord {
   sendEnabled: boolean;
   /** "approval": sends wait in Drafts until the owner approves them (default "direct"). */
   sendMode?: "direct" | "approval";
+  /** Hosted CalDAV permissions default off, including records written before these fields. */
+  calendarReadEnabled?: boolean;
+  calendarWriteEnabled?: boolean;
   /** Paused: the client keeps its token and settings, but every tool call is refused until resumed. */
   paused?: boolean;
   pausedAt?: string;

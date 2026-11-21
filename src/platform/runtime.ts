@@ -135,7 +135,11 @@ export class TenantRuntime {
 }
 
 /** Guard a tenant client's tools: preset capabilities plus tenant limits and send controls. */
-export function guardTenantTools(server: McpServer, ctx: TenantContext, audit: AuditLog): void {
+export function guardTenantTools(
+  server: McpServer,
+  ctx: Pick<TenantContext, "tenant" | "client">,
+  audit: AuditLog,
+): void {
   const { tenant, client } = ctx;
   guardTools(server, {
     policy: {
@@ -161,7 +165,20 @@ export function guardTenantTools(server: McpServer, ctx: TenantContext, audit: A
           text: "Daily tool-call limit reached for this account. Try again tomorrow.",
         };
       }
-      if (capabilityOf(tool, args) === "send") {
+      const capability = capabilityOf(tool, args);
+      if (capability === "calendar-read" && client.calendarReadEnabled !== true) {
+        return {
+          reason: "calendar-read-disabled",
+          text: "Calendar reading is turned off for this client.",
+        };
+      }
+      if (capability === "calendar-write" && client.calendarWriteEnabled !== true) {
+        return {
+          reason: "calendar-write-disabled",
+          text: "Calendar event creation is turned off for this client.",
+        };
+      }
+      if (capability === "send") {
         if (!tenant.limits.allowSend) {
           return {
             reason: "send-not-allowed",

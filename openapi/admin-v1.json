@@ -1981,6 +1981,8 @@
           "preset",
           "accounts",
           "sendEnabled",
+          "calendarReadEnabled",
+          "calendarWriteEnabled",
           "sendMode",
           "paused",
           "pausedAt",
@@ -2012,6 +2014,14 @@
           },
           "sendEnabled": {
             "type": "boolean"
+          },
+          "calendarReadEnabled": {
+            "type": "boolean",
+            "description": "Allows calendar reads within the hosted client's preset"
+          },
+          "calendarWriteEnabled": {
+            "type": "boolean",
+            "description": "Allows calendar event creation within the hosted client's preset"
           },
           "sendMode": {
             "enum": ["direct", "approval"],
@@ -2071,6 +2081,16 @@
             "type": "boolean",
             "default": false
           },
+          "calendarReadEnabled": {
+            "type": "boolean",
+            "description": "Allows calendar reads within the hosted client's preset",
+            "default": false
+          },
+          "calendarWriteEnabled": {
+            "type": "boolean",
+            "description": "Allows calendar event creation within the hosted client's preset",
+            "default": false
+          },
           "sendMode": {
             "enum": ["direct", "approval"],
             "description": "approval: send_message saves the message to Drafts and waits for the owner (see /approvals)",
@@ -2096,6 +2116,14 @@
           },
           "sendEnabled": {
             "type": "boolean"
+          },
+          "calendarReadEnabled": {
+            "type": "boolean",
+            "description": "Allows calendar reads within the hosted client's preset"
+          },
+          "calendarWriteEnabled": {
+            "type": "boolean",
+            "description": "Allows calendar event creation within the hosted client's preset"
           },
           "sendMode": {
             "enum": ["direct", "approval"],
