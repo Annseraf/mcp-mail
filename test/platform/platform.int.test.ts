@@ -451,6 +451,18 @@ describe("platform: multi-tenant mode and admin API", () => {
     expect(JSON.stringify(bad.body)).not.toContain(mail.users.alice.pass);
   });
 
+  it("keeps the CalDAV probe guarded even with private mail hosts enabled", async () => {
+    const result = await admin("POST", `/tenants/${A}/mailboxes/test-caldav`, {
+      url: "https://127.0.0.1/",
+      user: "calendar-fixture",
+      password: "fixture-only",
+    });
+    expect(result).toEqual({
+      status: 200,
+      body: { ok: false, error: "CalDAV destination blocked. Use the canonical public HTTPS URL." },
+    });
+  });
+
   it("updates and removes mailboxes; passwords are write-only", async () => {
     const before = await admin("GET", `/tenants/${A}/mailboxes`);
     expect(before.body.mailboxes.map((m: { id: string }) => m.id)).toContain("second");

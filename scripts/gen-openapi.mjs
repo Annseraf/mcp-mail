@@ -155,6 +155,31 @@ const spec = {
         },
       ),
     },
+    "/tenants/{tenantId}/mailboxes/test-caldav": {
+      parameters: [tenantPath],
+      post: op("testCalDav", "Verify guarded CalDAV discovery without saving credentials", {
+        requestBody: body({
+          type: "object",
+          additionalProperties: false,
+          required: ["url", "user", "password"],
+          properties: {
+            url: {
+              type: "string",
+              format: "uri",
+              pattern: "^https:",
+              description: "Canonical public HTTPS CalDAV URL without embedded credentials.",
+            },
+            user: { type: "string", minLength: 1 },
+            password: { type: "string", minLength: 1, maxLength: 1024, writeOnly: true },
+          },
+        }),
+        responses: {
+          200: json(ref("CheckResult"), "Discovery result"),
+          400: err("Invalid request"),
+          ...withTenant,
+        },
+      }),
+    },
     "/tenants/{tenantId}/mailboxes/{mailboxId}": {
       parameters: [tenantPath, mailboxPath],
       patch: op("updateMailbox", "Update a mailbox; passwords given here replace the stored ones", {

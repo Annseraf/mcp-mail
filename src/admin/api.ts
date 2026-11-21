@@ -7,9 +7,10 @@
 import { randomBytes } from "node:crypto";
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
+import { CalDavClient } from "../caldav-client.js";
 import { ImapClient } from "../imap-client.js";
 import { SmtpClient } from "../smtp-client.js";
-import type { OutboundPolicy } from "../outbound.js";
+import { OutboundBlockedError, systemLookup, type OutboundPolicy } from "../outbound.js";
 import { buildInfo } from "../version.js";
 import { PRESETS } from "../policy/capabilities.js";
 import type { Platform } from "../engine.js";
@@ -77,6 +78,17 @@ const caldavIn = z.object({
   user: z.string().min(1),
   password: z.string().min(1).max(1024),
 });
+
+const caldavProbe = caldavIn
+  .extend({
+    url: z.url({ protocol: /^https$/ }).pipe(
+      z.string().refine((value) => {
+        const url = new URL(value);
+        return !url.username && !url.password;
+      }, "URL must not contain credentials"),
+    ),
+  })
+  .strict();
 
 const limitsIn = z
   .object({
@@ -337,6 +349,30 @@ export function createAdminApp(d: AdminDeps): Express {
       await tenantOr404(String(req.params.id));
       const b = parse(mailboxTest, req.body);
       res.json(await testMailbox(b.imap, b.smtp, d.outbound));
+    }),
+  );
+  r.post(
+    "/tenants/:id/mailboxes/test-caldav",
+    h(async (req, res) => {
+      await tenantOr404(String(req.params.id));
+      const { url, user, password } = parse(caldavProbe, req.body);
+      const client = new CalDavClient(
+        { url, user, pass: password },
+        { outbound: d.outbound ?? { lookup: systemLookup } },
+      );
+      const signal = AbortSignal.timeout(10_000);
+      try {
+        await client.verify(signal);
+        res.json({ ok: true });
+      } catch (err) {
+        let error = "Could not verify CalDAV discovery. Check the URL and credentials.";
+        if (signal.aborted) error = "CalDAV discovery timed out.";
+        else if (err instanceof OutboundBlockedError) {
+          error = "CalDAV destination blocked. Use the canonical public HTTPS URL.";
+        }
+        // Provider errors can include URLs, credentials or response content.
+        res.json({ ok: false, error });
+      }
     }),
   );
   r.post(

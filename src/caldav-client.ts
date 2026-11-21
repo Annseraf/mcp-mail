@@ -75,7 +75,7 @@ export class CalDavClient {
     this.outbound = opts.outbound;
   }
 
-  private async ensureClient(): Promise<AuthedDAVClient> {
+  private async ensureClient(signal?: AbortSignal): Promise<AuthedDAVClient> {
     if (this.client) return this.client;
     if (this.connecting) return this.connecting;
     this.connecting = (async (): Promise<AuthedDAVClient> => {
@@ -89,6 +89,7 @@ export class CalDavClient {
         },
         authMethod: "Basic",
         defaultAccountType: "caldav",
+        ...(signal ? { fetchOptions: { signal } } : {}),
         ...(this.outbound
           ? {
               fetch: createGuardedFetch(this.outbound, {
@@ -102,12 +103,17 @@ export class CalDavClient {
       }).catch((err: unknown) => {
         throw refusal ?? err;
       });
-      this.client = client;
+      if (!signal) this.client = client;
       return client;
     })().finally(() => {
       this.connecting = null;
     });
     return this.connecting;
+  }
+
+  /** Verify principal and calendar-home discovery without reading calendar contents. */
+  async verify(signal: AbortSignal): Promise<void> {
+    await this.ensureClient(signal);
   }
 
   async listCalendars(): Promise<CalendarSummary[]> {

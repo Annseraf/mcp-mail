@@ -778,6 +778,13 @@ With `MULTI_TENANT=true`, the IMAP, SMTP and CalDAV hosts that tenants supply ar
 
 `ALLOW_PRIVATE_MAIL_HOSTS=true` lifts the private-address check for tenant pools and for the admin API's mailbox test. It defaults to off. Standalone servers (`MULTI_TENANT` off) are not checked and keep connecting to LAN hosts as before.
 
+`POST /admin/v1/tenants/<tenantId>/mailboxes/test-caldav` accepts `url`, `user` and
+`password` for a discovery-only check. It requires a canonical public HTTPS URL and
+applies the outbound guard even when `ALLOW_PRIVATE_MAIL_HOSTS` is enabled. It returns
+`{ "ok": true }` when the principal and calendar home can be discovered, or
+`{ "ok": false, "error": "…" }` with a pre-defined message. The check does not save
+secrets or read calendar contents.
+
 ## Not yet in platform mode
 
 Single-tenant OAuth and `clients.json` policies are described in [CLIENTS.md](CLIENTS.md).
