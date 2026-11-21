@@ -2,6 +2,15 @@
 
 All notable changes are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.3.0](https://github.com/Annseraf/mcp-mail/compare/v1.2.1...v1.3.0) (2026-11-21)
+
+
+### Features
+
+* **calendar:** add guarded CalDAV discovery probe (ART-128) ([#48](https://github.com/Annseraf/mcp-mail/issues/48)) ([b85e5e6](https://github.com/Annseraf/mcp-mail/commit/b85e5e63bd1fb74149e1afbd74e11ddbb1d89abd))
+* **calendar:** default hosted agent calendar permissions to off (ART-128) ([#46](https://github.com/Annseraf/mcp-mail/issues/46)) ([ccce594](https://github.com/Annseraf/mcp-mail/commit/ccce594cc39e7b99b5606b5736451324e3fd168f))
+* **outbound:** guard hosted outbound mail and CalDAV connections (ART-35) ([#47](https://github.com/Annseraf/mcp-mail/issues/47)) ([ebe3ba0](https://github.com/Annseraf/mcp-mail/commit/ebe3ba041fa5428c0f3fdbc52e257f44a26f4867))
+
 ## [1.2.1](https://github.com/Annseraf/mcp-mail/compare/v1.2.0...v1.2.1) (2026-11-08)
 
 
