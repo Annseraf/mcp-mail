@@ -41,5 +41,6 @@ curl -fsSL https://raw.githubusercontent.com/Annseraf/mcp-mail/main/install.sh |
 - [Permissions, OAuth and audit](CLIENTS.md)
 - [Compatibility with claude-mail-mcp](COMPATIBILITY.md)
 - [Multi-tenant platform mode](PLATFORM.md)
+- [Prompt-injection test set](PROMPT-INJECTION.md)
 - [Adding a tool](ADDING_A_TOOL.md)
 - [Source on GitHub](https://github.com/Annseraf/mcp-mail)
