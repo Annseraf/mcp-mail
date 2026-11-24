@@ -155,11 +155,15 @@ export class FileTenantStore {
       const record = await this.get(tenant.id);
       if (!record || record.createdAt !== tenant.createdAt) throw new Error("Tenant changed");
       const measurement = record.firstAction;
+      // Once all overlapping calls have settled, later calls cannot change the milestone.
+      if (measurement?.firstSuccessfulActionAt && (measurement.pending ?? 0) === 0) return;
       if (!measurement?.coverageSince || measurement.pending === undefined) return false;
       measurement.pending++;
       await this.write(record);
       return true;
     });
+
+    if (tracked === undefined) return () => Promise.resolve();
 
     let finished = false;
     return async (completedAt) => {

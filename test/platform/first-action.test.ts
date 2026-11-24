@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -133,7 +133,22 @@ it("records only successful authenticated tenant tools and serves private covera
     await engine.platform!.audit.applyRetention(a, 0);
     expect((await engine.platform!.audit.query(a)).entries).toEqual([]);
     expect(await admin("GET", firstPath(a), 200)).toEqual(measured);
-    const reopened = new FileTenantStore(path.join(dir, "tenants"));
+    const tenantDir = path.join(dir, "tenants");
+    const metadata = path.join(tenantDir, `${a}.json`);
+    const original = await readFile(metadata, "utf8");
+    const { ino } = await stat(metadata);
+    try {
+      if (process.getuid?.() !== 0) await chmod(tenantDir, 0o500);
+      const later = await mcp(a, token, "tools/call", "list_accounts");
+      expect(later.status).toBe(200);
+      expect((await later.json()).result.isError).not.toBe(true);
+      expect(await admin("GET", firstPath(a), 200)).toEqual(measured);
+      expect(await readFile(metadata, "utf8")).toBe(original);
+      expect((await stat(metadata)).ino).toBe(ino);
+    } finally {
+      await chmod(tenantDir, 0o700);
+    }
+    const reopened = new FileTenantStore(tenantDir);
     expect(reopened.firstActionView((await reopened.get(a))!)).toEqual(measured);
     await admin("DELETE", `/tenants/${a}`, 204);
     await admin("GET", firstPath(a), 404);
