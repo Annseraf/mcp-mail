@@ -7,7 +7,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { StaticAccounts, type Account } from "../accounts.js";
 import { ClientPool, type AccountClients, type PoolLike } from "../client-pool.js";
 import { capabilityOf, PRESETS } from "../policy/capabilities.js";
-import { guardTools, recipientsOf, type Denial } from "../policy/guard.js";
+import { guardTools, recipientsOf, type Denial, type GuardOptions } from "../policy/guard.js";
 import type { OutboundPolicy } from "../outbound.js";
 import type { AuditLog } from "./audit.js";
 import type { SecretStore } from "./secrets.js";
@@ -139,7 +139,7 @@ export function guardTenantTools(
   server: McpServer,
   ctx: Pick<TenantContext, "tenant" | "client">,
   audit: AuditLog,
-  onSuccess?: (completedAt: string) => Promise<void>,
+  beginMeasurement?: GuardOptions["beginMeasurement"],
 ): void {
   const { tenant, client } = ctx;
   guardTools(server, {
@@ -149,7 +149,7 @@ export function guardTenantTools(
       accounts: client.accounts,
     },
     audit: { log: audit, tenantId: tenant.id },
-    onSuccess,
+    beginMeasurement,
     rateKey: `${tenant.id}/${client.id}`,
     async check(tool, args): Promise<Denial | undefined> {
       if (tenant.status !== "active") {

@@ -123,7 +123,7 @@ const spec = {
                 type: ["string", "null"],
                 format: "date-time",
                 description:
-                  "Start of continuous measurement in the current store lifetime; null if coverage is unknown",
+                  "Start of continuous measurement; null if coverage is unknown or an action is unresolved",
               },
             },
           }),

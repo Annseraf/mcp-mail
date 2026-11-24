@@ -91,16 +91,15 @@ export interface TenantRecord {
   /** The earliest observed completion is retained independently of coverage. */
   firstAction?: {
     firstSuccessfulActionAt?: string;
+    // Both fields are written together. Older records cannot attest to coverage.
+    coverageSince?: string;
+    pending?: number;
   };
 }
 
 /** File-backed tenant store: `<dir>/<tenantId>.json`, one writer at a time per tenant. */
 export class FileTenantStore {
   private readonly locks = new Map<string, Promise<unknown>>();
-
-  // A previous process may have failed to persist a completion immediately
-  // before exiting. Only this store instance can attest to its own coverage.
-  private readonly firstActionCoverage = new Map<string, string>();
 
   constructor(private readonly dir: string) {}
 
@@ -129,8 +128,8 @@ export class FileTenantStore {
   async create(record: TenantRecord): Promise<boolean> {
     return this.locked(record.id, async () => {
       if (await this.get(record.id)) return false;
-      await writeFileAtomic(this.file(record.id), JSON.stringify(record, null, 2));
-      this.firstActionCoverage.set(record.id, record.createdAt);
+      record.firstAction = { coverageSince: record.createdAt, pending: 0 };
+      await this.write(record);
       return true;
     });
   }
@@ -143,37 +142,47 @@ export class FileTenantStore {
       fn(t);
       t.revision += 1;
       t.updatedAt = new Date().toISOString();
-      await writeFileAtomic(this.file(id), JSON.stringify(t, null, 2));
+      await this.write(t);
       return t;
     });
   }
 
-  async recordFirstAction(
+  /** Persist intent before dispatch. An unresolved intent survives a process exit. */
+  async beginFirstAction(
     tenant: Pick<TenantRecord, "id" | "createdAt">,
-    timestamp: string,
-  ): Promise<void> {
-    await this.locked(tenant.id, async () => {
-      let record: TenantRecord | undefined;
-      try {
-        record = await this.get(tenant.id);
-      } catch (err) {
-        this.clearFirstActionCoverage(tenant);
-        throw err;
-      }
-      // A tool that completes after deletion must not recreate the file or write into a new tenant.
-      if (!record || record.createdAt !== tenant.createdAt) return;
-      const measurement = record.firstAction ?? {};
-      const prior = measurement.firstSuccessfulActionAt;
-      if (prior && prior <= timestamp) return;
-      record.firstAction = { firstSuccessfulActionAt: timestamp };
-      // This metadata does not change tool configuration or invalidate connection pools.
-      try {
-        await writeFileAtomic(this.file(tenant.id), JSON.stringify(record, null, 2));
-      } catch (err) {
-        this.clearFirstActionCoverage(tenant);
-        throw err;
-      }
+  ): Promise<(completedAt?: string) => Promise<void>> {
+    const tracked = await this.locked(tenant.id, async () => {
+      const record = await this.get(tenant.id);
+      if (!record || record.createdAt !== tenant.createdAt) throw new Error("Tenant changed");
+      const measurement = record.firstAction;
+      if (!measurement?.coverageSince || measurement.pending === undefined) return false;
+      measurement.pending++;
+      await this.write(record);
+      return true;
     });
+
+    let finished = false;
+    return async (completedAt) => {
+      if (finished) return;
+      finished = true;
+      if (!tracked && !completedAt) return;
+      await this.locked(tenant.id, async () => {
+        const record = await this.get(tenant.id);
+        // A completion after deletion must not recreate the file or touch a new tenant.
+        if (!record || record.createdAt !== tenant.createdAt) return;
+        const measurement = (record.firstAction ??= {});
+        const prior = measurement.firstSuccessfulActionAt;
+        const earlier = completedAt && (!prior || completedAt < prior);
+        if (earlier) measurement.firstSuccessfulActionAt = completedAt;
+        if (tracked) {
+          if (!measurement.pending) throw new Error("First-action intent is missing");
+          measurement.pending--;
+        } else if (!earlier) {
+          return;
+        }
+        await this.write(record);
+      });
+    };
   }
 
   firstActionView(tenant: TenantRecord) {
@@ -181,21 +190,16 @@ export class FileTenantStore {
       tenantId: tenant.id,
       firstSuccessfulActionAt: tenant.firstAction?.firstSuccessfulActionAt ?? null,
       coverageStartedAt:
-        this.firstActionCoverage.get(tenant.id) === tenant.createdAt ? tenant.createdAt : null,
+        tenant.firstAction?.pending === 0 ? (tenant.firstAction.coverageSince ?? null) : null,
     };
   }
 
-  private clearFirstActionCoverage(tenant: Pick<TenantRecord, "id" | "createdAt">): void {
-    if (this.firstActionCoverage.get(tenant.id) === tenant.createdAt) {
-      this.firstActionCoverage.delete(tenant.id);
-    }
+  async delete(id: string): Promise<void> {
+    await this.locked(id, () => removeFile(this.file(id)));
   }
 
-  async delete(id: string): Promise<void> {
-    await this.locked(id, async () => {
-      await removeFile(this.file(id));
-      this.firstActionCoverage.delete(id);
-    });
+  private async write(record: TenantRecord): Promise<void> {
+    await writeFileAtomic(this.file(record.id), JSON.stringify(record, null, 2), true);
   }
 
   private async locked<T>(id: string, fn: () => Promise<T>): Promise<T> {

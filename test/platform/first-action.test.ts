@@ -134,10 +134,7 @@ it("records only successful authenticated tenant tools and serves private covera
     expect((await engine.platform!.audit.query(a)).entries).toEqual([]);
     expect(await admin("GET", firstPath(a), 200)).toEqual(measured);
     const reopened = new FileTenantStore(path.join(dir, "tenants"));
-    expect(reopened.firstActionView((await reopened.get(a))!)).toEqual({
-      ...measured,
-      coverageStartedAt: null,
-    });
+    expect(reopened.firstActionView((await reopened.get(a))!)).toEqual(measured);
     await admin("DELETE", `/tenants/${a}`, 204);
     await admin("GET", firstPath(a), 404);
     expect(await reopened.get(a)).toBeUndefined();
@@ -167,11 +164,10 @@ it("retains the earliest completion in a legacy record and ignores completions a
     expect(tenants.firstActionView(tenant).coverageStartedAt).toBeNull();
     const early = "2025-01-02T00:00:01.000Z";
     const late = "2025-01-02T00:00:02.000Z";
-    await Promise.all([
-      tenants.recordFirstAction(tenant, late),
-      tenants.recordFirstAction(tenant, early),
-      tenants.recordFirstAction(tenant, late),
-    ]);
+    const finishes = await Promise.all(
+      Array.from({ length: 3 }, () => tenants.beginFirstAction(tenant)),
+    );
+    await Promise.all([finishes[0](late), finishes[1](early), finishes[2](late)]);
     const saved = (await tenants.get(tenant.id))!;
     expect(saved).toMatchObject({ revision: 1, updatedAt: tenant.updatedAt });
     expect(tenants.firstActionView(saved)).toEqual({
@@ -184,23 +180,30 @@ it("retains the earliest completion in a legacy record and ignores completions a
     ).toEqual({
       firstSuccessfulActionAt: early,
     });
+    const completionAfterRemoval = await tenants.beginFirstAction(tenant);
+    const completionAfterReplacement = await tenants.beginFirstAction(tenant);
     await tenants.delete(tenant.id);
-    await tenants.recordFirstAction(tenant, late);
+    await completionAfterRemoval(late);
     expect(await tenants.get(tenant.id)).toBeUndefined();
     await tenants.create({ ...tenant, createdAt: late });
-    await tenants.recordFirstAction(tenant, late);
-    expect((await tenants.get(tenant.id))!.firstAction).toBeUndefined();
+    await completionAfterReplacement(late);
+    expect((await tenants.get(tenant.id))!.firstAction).toEqual({
+      coverageSince: late,
+      pending: 0,
+    });
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });
 
 it.skipIf(process.getuid?.() === 0)(
-  "reports unknown coverage on restart immediately after a failed metadata write",
+  "reopens with unknown coverage after a failed settlement and preserves unrelated coverage",
   async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "mcp-first-action-gap-"));
     const tenants = new FileTenantStore(dir);
     const createdAt = "2025-01-01T00:00:00.000Z";
+    const early = "2025-01-02T00:00:01.000Z";
+    const late = "2025-01-02T00:00:02.000Z";
     const tenant: TenantRecord = {
       id: "tenant-gap",
       createdAt,
@@ -211,43 +214,42 @@ it.skipIf(process.getuid?.() === 0)(
       mailboxes: [],
       limits: DEFAULT_LIMITS,
     };
+    const other = { ...tenant, id: "tenant-clean" };
     try {
       await tenants.create(tenant);
-      // Simulate an on-disk record written by the previous revision, which
-      // incorrectly treated this historical field as durable coverage proof.
-      await writeFile(
-        path.join(dir, `${tenant.id}.json`),
-        JSON.stringify({
-          ...tenant,
-          firstAction: { coverageStartedAt: createdAt },
-        }),
-      );
-      expect(tenants.firstActionView((await tenants.get(tenant.id))!).coverageStartedAt).toBe(
-        createdAt,
-      );
+      await tenants.create(other);
+      const [finishEarly, finishLate] = await Promise.all([
+        tenants.beginFirstAction(other),
+        tenants.beginFirstAction(other),
+      ]);
+      await finishLate(late);
+      expect(tenants.firstActionView((await tenants.get(other.id))!).coverageStartedAt).toBeNull();
+      await finishEarly(early);
+      await finishEarly(late); // A duplicate settle cannot consume another intent.
+
+      const finish = await tenants.beginFirstAction(tenant);
       await chmod(dir, 0o500);
-      const failedAt = "2025-01-02T00:00:00.000Z";
-      await expect(tenants.recordFirstAction(tenant, failedAt)).rejects.toMatchObject({
-        code: "EACCES",
-      });
-      expect(tenants.firstActionView((await tenants.get(tenant.id))!)).toEqual({
-        tenantId: tenant.id,
-        coverageStartedAt: null,
-        firstSuccessfulActionAt: null,
-      });
-      await chmod(dir, 0o700);
-      const next = "2025-01-03T00:00:00.000Z";
+      await expect(finish(early)).rejects.toMatchObject({ code: "EACCES" });
+      await expect(tenants.beginFirstAction(tenant)).rejects.toMatchObject({ code: "EACCES" });
       const reopened = new FileTenantStore(dir);
       expect(reopened.firstActionView((await reopened.get(tenant.id))!)).toEqual({
         tenantId: tenant.id,
         coverageStartedAt: null,
         firstSuccessfulActionAt: null,
       });
-      await reopened.recordFirstAction(tenant, next);
+      expect(reopened.firstActionView((await reopened.get(other.id))!)).toEqual({
+        tenantId: other.id,
+        coverageStartedAt: createdAt,
+        firstSuccessfulActionAt: early,
+      });
+
+      await chmod(dir, 0o700);
+      const next = await reopened.beginFirstAction(tenant);
+      await next(late);
       expect(reopened.firstActionView((await reopened.get(tenant.id))!)).toEqual({
         tenantId: tenant.id,
         coverageStartedAt: null,
-        firstSuccessfulActionAt: next,
+        firstSuccessfulActionAt: late,
       });
     } finally {
       await chmod(dir, 0o700);

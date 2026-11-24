@@ -79,8 +79,8 @@ export interface GuardOptions {
   /** Extra checks run after the capability check (tenant suspension, limits, send toggles). */
   check?: (tool: string, args: Record<string, unknown>) => Promise<Denial | undefined>;
   audit?: { log: AuditSink; tenantId: string };
-  /** Observes successful tool completions without seeing arguments or results. */
-  onSuccess?: (completedAt: string) => Promise<void>;
+  /** Starts measurement before dispatch and settles it with only the completion time, if successful. */
+  beginMeasurement?: () => Promise<(completedAt?: string) => Promise<void>>;
   /** Key for in-memory rate limits; defaults to the client id. */
   rateKey?: string;
 }
@@ -157,11 +157,19 @@ export function guardTools(server: McpServer, o: GuardOptions): void {
         });
       }
 
+      let finishMeasurement;
+      try {
+        finishMeasurement = await o.beginMeasurement?.();
+      } catch {
+        return deny({
+          reason: "measurement-unavailable",
+          text: "The account store is unavailable. No action was taken.",
+        });
+      }
+
       try {
         const result = await cb(args, extra);
-        if (result && !result.isError) {
-          await o.onSuccess?.(new Date().toISOString());
-        }
+        await finishMeasurement?.(result && !result.isError ? new Date().toISOString() : undefined);
         const reason = result?.auditReason;
         if (result) delete result.auditReason;
         await record({
@@ -172,6 +180,7 @@ export function guardTools(server: McpServer, o: GuardOptions): void {
         });
         return result;
       } catch (err) {
+        await finishMeasurement?.();
         await record({ ...base, result: "error", durationMs: Date.now() - started });
         throw err;
       }

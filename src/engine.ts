@@ -348,14 +348,23 @@ export async function createEngine(o: EngineOptions): Promise<Engine> {
         ctx.pool,
         ctx.accounts,
         (server) =>
-          guardTenantTools(server, ctx, p.audit, async (completedAt) => {
-            try {
-              await p.tenants?.recordFirstAction(ctx.tenant, completedAt);
-            } catch {
-              // A failed measurement must not turn a completed tool call into a retry.
-              log("warn", "could not persist first agent action", { tenantId: ctx.tenant.id });
-            }
-          }),
+          guardTenantTools(
+            server,
+            ctx,
+            p.audit,
+            p.tenants &&
+              (async () => {
+                const finish = await p.tenants!.beginFirstAction(ctx.tenant);
+                return async (completedAt) => {
+                  try {
+                    await finish(completedAt);
+                  } catch {
+                    // The durable intent stays unresolved. Preserve the tool response.
+                    log("warn", "could not settle first agent action", { tenantId: ctx.tenant.id });
+                  }
+                };
+              }),
+          ),
         {
           settings,
           holdSend:
