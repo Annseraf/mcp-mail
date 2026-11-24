@@ -146,7 +146,8 @@ A minimal product-side client is in [`examples/admin-client.mjs`](../examples/ad
 successful authenticated tool completion, and the start of measurement coverage. A null completion
 with a known coverage start means no success has been recorded during coverage. Existing tenant
 records can gain an observed completion while coverage stays unknown. New tenants retain coverage
-across restart when all tool intents have been settled. An unresolved intent makes coverage unknown.
+across restart when all tool intents have been settled. An unresolved intent makes coverage unknown. On the next tool call after reopening, the
+store retires intents from its previous instance and keeps coverage unknown.
 With an external config provider, both timestamps are null. Approval-queued calls count as successful tool use.
 
 The timestamp lives with local tenant metadata, independent of audit retention. It is removed with

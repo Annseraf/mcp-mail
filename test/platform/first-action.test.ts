@@ -212,7 +212,7 @@ it("retains the earliest completion in a legacy record and ignores completions a
 });
 
 it.skipIf(process.getuid?.() === 0)(
-  "reopens with unknown coverage after a failed settlement and preserves unrelated coverage",
+  "retires a previous generation’s failed intent and preserves clean restart coverage",
   async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "mcp-first-action-gap-"));
     const tenants = new FileTenantStore(dir);
@@ -261,6 +261,15 @@ it.skipIf(process.getuid?.() === 0)(
       await chmod(dir, 0o700);
       const next = await reopened.beginFirstAction(tenant);
       await next(late);
+      const metadata = path.join(dir, `${tenant.id}.json`);
+      const original = await readFile(metadata, "utf8");
+      expect(JSON.parse(original).firstAction).toEqual({ firstSuccessfulActionAt: late });
+      const { ino } = await stat(metadata);
+      await chmod(dir, 0o500);
+      const afterRecovery = await reopened.beginFirstAction(tenant);
+      await afterRecovery("2025-01-03T00:00:00.000Z");
+      expect(await readFile(metadata, "utf8")).toBe(original);
+      expect((await stat(metadata)).ino).toBe(ino);
       expect(reopened.firstActionView((await reopened.get(tenant.id))!)).toEqual({
         tenantId: tenant.id,
         coverageStartedAt: null,

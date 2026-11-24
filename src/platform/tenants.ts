@@ -3,6 +3,7 @@
  * tenant except secrets: mailbox passwords live in the SecretStore and
  * client tokens are stored only as SHA-256 hashes.
  */
+import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { readJson, removeFile, writeFileAtomic } from "./fsutil.js";
@@ -94,12 +95,14 @@ export interface TenantRecord {
     // Both fields are written together. Older records cannot attest to coverage.
     coverageSince?: string;
     pending?: number;
+    pendingGeneration?: string;
   };
 }
 
 /** File-backed tenant store: `<dir>/<tenantId>.json`, one writer at a time per tenant. */
 export class FileTenantStore {
   private readonly locks = new Map<string, Promise<unknown>>();
+  private readonly generation = randomUUID();
 
   constructor(private readonly dir: string) {}
 
@@ -155,10 +158,19 @@ export class FileTenantStore {
       const record = await this.get(tenant.id);
       if (!record || record.createdAt !== tenant.createdAt) throw new Error("Tenant changed");
       const measurement = record.firstAction;
+      // The store has one writer process. An intent from a previous instance
+      // cannot settle, and its missing evidence permanently invalidates coverage.
+      if (measurement?.pending && measurement.pendingGeneration !== this.generation) {
+        delete measurement.coverageSince;
+        delete measurement.pending;
+        delete measurement.pendingGeneration;
+        await this.write(record);
+      }
       // Once all overlapping calls have settled, later calls cannot change the milestone.
       if (measurement?.firstSuccessfulActionAt && (measurement.pending ?? 0) === 0) return;
       if (!measurement?.coverageSince || measurement.pending === undefined) return false;
       measurement.pending++;
+      measurement.pendingGeneration = this.generation;
       await this.write(record);
       return true;
     });
@@ -179,8 +191,11 @@ export class FileTenantStore {
         const earlier = completedAt && (!prior || completedAt < prior);
         if (earlier) measurement.firstSuccessfulActionAt = completedAt;
         if (tracked) {
-          if (!measurement.pending) throw new Error("First-action intent is missing");
+          if (!measurement.pending || measurement.pendingGeneration !== this.generation) {
+            throw new Error("First-action intent is missing");
+          }
           measurement.pending--;
+          if (measurement.pending === 0) delete measurement.pendingGeneration;
         } else if (!earlier) {
           return;
         }
