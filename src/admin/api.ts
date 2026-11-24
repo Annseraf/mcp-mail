@@ -282,7 +282,6 @@ export function createAdminApp(d: AdminDeps): Express {
         createdAt,
         updatedAt: createdAt,
         revision: 1,
-        firstAction: { coverageStartedAt: createdAt },
         limits: { ...DEFAULT_LIMITS, ...body.limits },
         mailboxes: [],
         clients: [],

@@ -88,9 +88,8 @@ export interface TenantRecord {
   limits: TenantLimits;
   mailboxes: MailboxRecord[];
   clients: ClientRecord[];
-  /** Legacy records have no coverage start. Their first observed action may still be recorded. */
+  /** The earliest observed completion is retained independently of coverage. */
   firstAction?: {
-    coverageStartedAt?: string;
     firstSuccessfulActionAt?: string;
   };
 }
@@ -99,7 +98,9 @@ export interface TenantRecord {
 export class FileTenantStore {
   private readonly locks = new Map<string, Promise<unknown>>();
 
-  private readonly firstActionGaps = new Map<string, string>();
+  // A previous process may have failed to persist a completion immediately
+  // before exiting. Only this store instance can attest to its own coverage.
+  private readonly firstActionCoverage = new Map<string, string>();
 
   constructor(private readonly dir: string) {}
 
@@ -129,6 +130,7 @@ export class FileTenantStore {
     return this.locked(record.id, async () => {
       if (await this.get(record.id)) return false;
       await writeFileAtomic(this.file(record.id), JSON.stringify(record, null, 2));
+      this.firstActionCoverage.set(record.id, record.createdAt);
       return true;
     });
   }
@@ -155,24 +157,20 @@ export class FileTenantStore {
       try {
         record = await this.get(tenant.id);
       } catch (err) {
-        this.firstActionGaps.set(tenant.id, tenant.createdAt);
+        this.clearFirstActionCoverage(tenant);
         throw err;
       }
       // A tool that completes after deletion must not recreate the file or write into a new tenant.
       if (!record || record.createdAt !== tenant.createdAt) return;
       const measurement = record.firstAction ?? {};
       const prior = measurement.firstSuccessfulActionAt;
-      const lostCoverage = this.firstActionGaps.get(tenant.id) === tenant.createdAt;
-      if (prior && prior <= timestamp && !lostCoverage) return;
-      if (!prior || timestamp < prior) measurement.firstSuccessfulActionAt = timestamp;
-      if (lostCoverage) delete measurement.coverageStartedAt;
-      record.firstAction = measurement;
+      if (prior && prior <= timestamp) return;
+      record.firstAction = { firstSuccessfulActionAt: timestamp };
       // This metadata does not change tool configuration or invalidate connection pools.
       try {
         await writeFileAtomic(this.file(tenant.id), JSON.stringify(record, null, 2));
-        this.firstActionGaps.delete(tenant.id);
       } catch (err) {
-        this.firstActionGaps.set(tenant.id, tenant.createdAt);
+        this.clearFirstActionCoverage(tenant);
         throw err;
       }
     });
@@ -183,16 +181,20 @@ export class FileTenantStore {
       tenantId: tenant.id,
       firstSuccessfulActionAt: tenant.firstAction?.firstSuccessfulActionAt ?? null,
       coverageStartedAt:
-        this.firstActionGaps.get(tenant.id) === tenant.createdAt
-          ? null
-          : (tenant.firstAction?.coverageStartedAt ?? null),
+        this.firstActionCoverage.get(tenant.id) === tenant.createdAt ? tenant.createdAt : null,
     };
+  }
+
+  private clearFirstActionCoverage(tenant: Pick<TenantRecord, "id" | "createdAt">): void {
+    if (this.firstActionCoverage.get(tenant.id) === tenant.createdAt) {
+      this.firstActionCoverage.delete(tenant.id);
+    }
   }
 
   async delete(id: string): Promise<void> {
     await this.locked(id, async () => {
       await removeFile(this.file(id));
-      this.firstActionGaps.delete(id);
+      this.firstActionCoverage.delete(id);
     });
   }
 

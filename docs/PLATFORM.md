@@ -145,7 +145,9 @@ A minimal product-side client is in [`examples/admin-client.mjs`](../examples/ad
 `GET /admin/v1/tenants/{tenantId}/first-action` returns the tenant ID, its earliest observed
 successful authenticated tool completion, and the start of measurement coverage. A null completion
 with a known coverage start means no success has been recorded during coverage. Existing tenant
-records can gain an observed completion while coverage stays unknown. With an external config
+records can gain an observed completion while coverage stays unknown. Coverage is reported only for
+tenants created by the current store instance whose measurement has stayed uninterrupted. Reopening
+the store retains the observed completion and reports unknown coverage. With an external config
 provider, both timestamps are null. Approval-queued calls count as successful tool use.
 
 The timestamp lives with local tenant metadata, independent of audit retention. It is removed with

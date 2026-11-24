@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { chmod, mkdtemp, readFile, rm } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -134,7 +134,10 @@ it("records only successful authenticated tenant tools and serves private covera
     expect((await engine.platform!.audit.query(a)).entries).toEqual([]);
     expect(await admin("GET", firstPath(a), 200)).toEqual(measured);
     const reopened = new FileTenantStore(path.join(dir, "tenants"));
-    expect(reopened.firstActionView((await reopened.get(a))!)).toEqual(measured);
+    expect(reopened.firstActionView((await reopened.get(a))!)).toEqual({
+      ...measured,
+      coverageStartedAt: null,
+    });
     await admin("DELETE", `/tenants/${a}`, 204);
     await admin("GET", firstPath(a), 404);
     expect(await reopened.get(a)).toBeUndefined();
@@ -160,7 +163,7 @@ it("retains the earliest completion in a legacy record and ignores completions a
       mailboxes: [],
       limits: DEFAULT_LIMITS,
     };
-    await tenants.create(tenant);
+    await writeFile(path.join(dir, `${tenant.id}.json`), JSON.stringify(tenant));
     expect(tenants.firstActionView(tenant).coverageStartedAt).toBeNull();
     const early = "2025-01-02T00:00:01.000Z";
     const late = "2025-01-02T00:00:02.000Z";
@@ -193,7 +196,7 @@ it("retains the earliest completion in a legacy record and ignores completions a
 });
 
 it.skipIf(process.getuid?.() === 0)(
-  "reports unknown coverage after a failed metadata write",
+  "reports unknown coverage on restart immediately after a failed metadata write",
   async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "mcp-first-action-gap-"));
     const tenants = new FileTenantStore(dir);
@@ -207,10 +210,21 @@ it.skipIf(process.getuid?.() === 0)(
       clients: [],
       mailboxes: [],
       limits: DEFAULT_LIMITS,
-      firstAction: { coverageStartedAt: createdAt },
     };
     try {
       await tenants.create(tenant);
+      // Simulate an on-disk record written by the previous revision, which
+      // incorrectly treated this historical field as durable coverage proof.
+      await writeFile(
+        path.join(dir, `${tenant.id}.json`),
+        JSON.stringify({
+          ...tenant,
+          firstAction: { coverageStartedAt: createdAt },
+        }),
+      );
+      expect(tenants.firstActionView((await tenants.get(tenant.id))!).coverageStartedAt).toBe(
+        createdAt,
+      );
       await chmod(dir, 0o500);
       const failedAt = "2025-01-02T00:00:00.000Z";
       await expect(tenants.recordFirstAction(tenant, failedAt)).rejects.toMatchObject({
@@ -223,8 +237,13 @@ it.skipIf(process.getuid?.() === 0)(
       });
       await chmod(dir, 0o700);
       const next = "2025-01-03T00:00:00.000Z";
-      await tenants.recordFirstAction(tenant, next);
       const reopened = new FileTenantStore(dir);
+      expect(reopened.firstActionView((await reopened.get(tenant.id))!)).toEqual({
+        tenantId: tenant.id,
+        coverageStartedAt: null,
+        firstSuccessfulActionAt: null,
+      });
+      await reopened.recordFirstAction(tenant, next);
       expect(reopened.firstActionView((await reopened.get(tenant.id))!)).toEqual({
         tenantId: tenant.id,
         coverageStartedAt: null,

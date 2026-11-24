@@ -122,7 +122,8 @@ const spec = {
               coverageStartedAt: {
                 type: ["string", "null"],
                 format: "date-time",
-                description: "Start of continuous measurement; null if coverage is unknown",
+                description:
+                  "Start of continuous measurement in the current store lifetime; null if coverage is unknown",
               },
             },
           }),
