@@ -104,6 +104,32 @@ const spec = {
         },
       ),
     },
+    "/tenants/{tenantId}/first-action": {
+      parameters: [tenantPath],
+      get: op("getFirstAction", "First observed successful authenticated tool completion", {
+        responses: {
+          200: json({
+            type: "object",
+            additionalProperties: false,
+            required: ["tenantId", "firstSuccessfulActionAt", "coverageStartedAt"],
+            properties: {
+              tenantId: tenantPath.schema,
+              firstSuccessfulActionAt: {
+                type: ["string", "null"],
+                format: "date-time",
+                description: "Earliest observed successful completion; null if none is recorded",
+              },
+              coverageStartedAt: {
+                type: ["string", "null"],
+                format: "date-time",
+                description: "Start of continuous measurement; null if coverage is unknown",
+              },
+            },
+          }),
+          ...withTenant,
+        },
+      }),
+    },
     "/tenants/{tenantId}/suspend": {
       parameters: [tenantPath],
       post: op(

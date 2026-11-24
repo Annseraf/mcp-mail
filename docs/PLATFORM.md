@@ -130,15 +130,26 @@ fields of `accounts.json` as `enc:v1:…` values after writing a timestamped bac
 the integration suite is validated against the spec, and CI fails if any operation is untested.
 Breaking changes ship as `/admin/v2`, with v1 kept for at least one major version.
 
-| Area      | Operations                                                                               |
-| --------- | ---------------------------------------------------------------------------------------- |
-| Tenants   | create, get, suspend, unsuspend, delete (purge), set limits                              |
-| Mailboxes | list, add, update (incl. password replacement), remove, test connectivity without saving |
-| Clients   | list, add (returns endpoint + token once), update, revoke, rotate                        |
-| Activity  | audit log (paginated, filter by client), usage per day and client                        |
-| Meta      | health, version                                                                          |
+| Area      | Operations                                                                                 |
+| --------- | ------------------------------------------------------------------------------------------ |
+| Tenants   | create, get, suspend, unsuspend, delete (purge), set limits                                |
+| Mailboxes | list, add, update (incl. password replacement), remove, test connectivity without saving   |
+| Clients   | list, add (returns endpoint + token once), update, revoke, rotate                          |
+| Activity  | audit log (paginated, filter by client), usage per day and client, first successful action |
+| Meta      | health, version                                                                            |
 
 A minimal product-side client is in [`examples/admin-client.mjs`](../examples/admin-client.mjs).
+
+### First successful agent action
+
+`GET /admin/v1/tenants/{tenantId}/first-action` returns the tenant ID, its earliest observed
+successful authenticated tool completion, and the start of measurement coverage. A null completion
+with a known coverage start means no success has been recorded during coverage. Existing tenant
+records can gain an observed completion while coverage stays unknown. With an external config
+provider, both timestamps are null. Approval-queued calls count as successful tool use.
+
+The timestamp lives with local tenant metadata, independent of audit retention. It is removed with
+the tenant.
 
 ## Audit log
 

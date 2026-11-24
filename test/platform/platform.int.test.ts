@@ -221,6 +221,13 @@ describe("platform: multi-tenant mode and admin API", () => {
     const limits = { maxMailboxes: 2, maxClients: 3, toolCallsPerDay: 1000, allowSend: false };
     expect((await admin("POST", "/tenants", { id: A, limits })).status).toBe(201);
     expect((await admin("POST", "/tenants", { id: B, limits })).status).toBe(201);
+    const firstAction = await admin("GET", `/tenants/${A}/first-action`);
+    expect(firstAction.status).toBe(200);
+    expect(firstAction.body).toEqual({
+      tenantId: A,
+      firstSuccessfulActionAt: null,
+      coverageStartedAt: expect.any(String),
+    });
     expect((await admin("POST", "/tenants", { id: A })).status).toBe(409);
     expect((await admin("POST", "/tenants", { id: "Bad/../id" })).status).toBe(400);
 

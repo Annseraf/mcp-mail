@@ -347,7 +347,15 @@ export async function createEngine(o: EngineOptions): Promise<Engine> {
         o.version,
         ctx.pool,
         ctx.accounts,
-        (server) => guardTenantTools(server, ctx, p.audit),
+        (server) =>
+          guardTenantTools(server, ctx, p.audit, async (completedAt) => {
+            try {
+              await p.tenants?.recordFirstAction(ctx.tenant, completedAt);
+            } catch {
+              // A failed measurement must not turn a completed tool call into a retry.
+              log("warn", "could not persist first agent action", { tenantId: ctx.tenant.id });
+            }
+          }),
         {
           settings,
           holdSend:

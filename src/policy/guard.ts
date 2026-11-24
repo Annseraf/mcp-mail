@@ -79,6 +79,8 @@ export interface GuardOptions {
   /** Extra checks run after the capability check (tenant suspension, limits, send toggles). */
   check?: (tool: string, args: Record<string, unknown>) => Promise<Denial | undefined>;
   audit?: { log: AuditSink; tenantId: string };
+  /** Observes successful tool completions without seeing arguments or results. */
+  onSuccess?: (completedAt: string) => Promise<void>;
   /** Key for in-memory rate limits; defaults to the client id. */
   rateKey?: string;
 }
@@ -157,6 +159,9 @@ export function guardTools(server: McpServer, o: GuardOptions): void {
 
       try {
         const result = await cb(args, extra);
+        if (result && !result.isError) {
+          await o.onSuccess?.(new Date().toISOString());
+        }
         const reason = result?.auditReason;
         if (result) delete result.auditReason;
         await record({

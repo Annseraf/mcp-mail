@@ -275,12 +275,14 @@ export function createAdminApp(d: AdminDeps): Express {
     h(async (req, res) => {
       const body = parse(tenantCreate, req.body);
       const id = body.id ?? `t-${randomBytes(8).toString("hex")}`;
+      const createdAt = now();
       const t: TenantRecord = {
         id,
         status: "active",
-        createdAt: now(),
-        updatedAt: now(),
+        createdAt,
+        updatedAt: createdAt,
         revision: 1,
+        firstAction: { coverageStartedAt: createdAt },
         limits: { ...DEFAULT_LIMITS, ...body.limits },
         mailboxes: [],
         clients: [],
@@ -294,6 +296,19 @@ export function createAdminApp(d: AdminDeps): Express {
     "/tenants/:id",
     h(async (req, res) => {
       res.json(tenantView(await tenantOr404(String(req.params.id))));
+    }),
+  );
+  r.get(
+    "/tenants/:id/first-action",
+    h(async (req, res) => {
+      const tenant = await tenantOr404(String(req.params.id));
+      res.json(
+        p.tenants?.firstActionView(tenant) ?? {
+          tenantId: tenant.id,
+          firstSuccessfulActionAt: null,
+          coverageStartedAt: null,
+        },
+      );
     }),
   );
   for (const [action, status] of [

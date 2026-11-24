@@ -139,6 +139,7 @@ export function guardTenantTools(
   server: McpServer,
   ctx: Pick<TenantContext, "tenant" | "client">,
   audit: AuditLog,
+  onSuccess?: (completedAt: string) => Promise<void>,
 ): void {
   const { tenant, client } = ctx;
   guardTools(server, {
@@ -148,6 +149,7 @@ export function guardTenantTools(
       accounts: client.accounts,
     },
     audit: { log: audit, tenantId: tenant.id },
+    onSuccess,
     rateKey: `${tenant.id}/${client.id}`,
     async check(tool, args): Promise<Denial | undefined> {
       if (tenant.status !== "active") {

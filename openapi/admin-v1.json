@@ -211,6 +211,73 @@
         }
       }
     },
+    "/tenants/{tenantId}/first-action": {
+      "parameters": [
+        {
+          "name": "tenantId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{2,62}$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getFirstAction",
+        "summary": "First observed successful authenticated tool completion",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["tenantId", "firstSuccessfulActionAt", "coverageStartedAt"],
+                  "properties": {
+                    "tenantId": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9-]{2,62}$"
+                    },
+                    "firstSuccessfulActionAt": {
+                      "type": ["string", "null"],
+                      "format": "date-time",
+                      "description": "Earliest observed successful completion; null if none is recorded"
+                    },
+                    "coverageStartedAt": {
+                      "type": ["string", "null"],
+                      "format": "date-time",
+                      "description": "Start of continuous measurement; null if coverage is unknown"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid service token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Tenant not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/tenants/{tenantId}/suspend": {
       "parameters": [
         {

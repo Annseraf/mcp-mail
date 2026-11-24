@@ -88,11 +88,18 @@ export interface TenantRecord {
   limits: TenantLimits;
   mailboxes: MailboxRecord[];
   clients: ClientRecord[];
+  /** Legacy records have no coverage start. Their first observed action may still be recorded. */
+  firstAction?: {
+    coverageStartedAt?: string;
+    firstSuccessfulActionAt?: string;
+  };
 }
 
 /** File-backed tenant store: `<dir>/<tenantId>.json`, one writer at a time per tenant. */
 export class FileTenantStore {
   private readonly locks = new Map<string, Promise<unknown>>();
+
+  private readonly firstActionGaps = new Map<string, string>();
 
   constructor(private readonly dir: string) {}
 
@@ -139,8 +146,54 @@ export class FileTenantStore {
     });
   }
 
+  async recordFirstAction(
+    tenant: Pick<TenantRecord, "id" | "createdAt">,
+    timestamp: string,
+  ): Promise<void> {
+    await this.locked(tenant.id, async () => {
+      let record: TenantRecord | undefined;
+      try {
+        record = await this.get(tenant.id);
+      } catch (err) {
+        this.firstActionGaps.set(tenant.id, tenant.createdAt);
+        throw err;
+      }
+      // A tool that completes after deletion must not recreate the file or write into a new tenant.
+      if (!record || record.createdAt !== tenant.createdAt) return;
+      const measurement = record.firstAction ?? {};
+      const prior = measurement.firstSuccessfulActionAt;
+      const lostCoverage = this.firstActionGaps.get(tenant.id) === tenant.createdAt;
+      if (prior && prior <= timestamp && !lostCoverage) return;
+      if (!prior || timestamp < prior) measurement.firstSuccessfulActionAt = timestamp;
+      if (lostCoverage) delete measurement.coverageStartedAt;
+      record.firstAction = measurement;
+      // This metadata does not change tool configuration or invalidate connection pools.
+      try {
+        await writeFileAtomic(this.file(tenant.id), JSON.stringify(record, null, 2));
+        this.firstActionGaps.delete(tenant.id);
+      } catch (err) {
+        this.firstActionGaps.set(tenant.id, tenant.createdAt);
+        throw err;
+      }
+    });
+  }
+
+  firstActionView(tenant: TenantRecord) {
+    return {
+      tenantId: tenant.id,
+      firstSuccessfulActionAt: tenant.firstAction?.firstSuccessfulActionAt ?? null,
+      coverageStartedAt:
+        this.firstActionGaps.get(tenant.id) === tenant.createdAt
+          ? null
+          : (tenant.firstAction?.coverageStartedAt ?? null),
+    };
+  }
+
   async delete(id: string): Promise<void> {
-    await this.locked(id, () => removeFile(this.file(id)));
+    await this.locked(id, async () => {
+      await removeFile(this.file(id));
+      this.firstActionGaps.delete(id);
+    });
   }
 
   private async locked<T>(id: string, fn: () => Promise<T>): Promise<T> {
