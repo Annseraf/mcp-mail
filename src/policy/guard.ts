@@ -4,7 +4,7 @@
  * registered (absent from tools/list), and every call is checked again at
  * dispatch. Every call is audited when a sink is configured.
  */
-import type { McpServer } from "@modelcontextprotocol/server";
+import type { CallToolRequest, McpServer } from "@modelcontextprotocol/server";
 import type { AuditEntry, AuditSink } from "../platform/audit.js";
 import { capabilityOf, type Capability } from "./capabilities.js";
 
@@ -93,13 +93,44 @@ export function guardTools(server: McpServer, o: GuardOptions): void {
         .catch(() => {});
   };
 
+  const hiddenTools = new Set<string>();
+  if (o.audit && server.server) {
+    const protocol = server.server;
+    // Observe validated calls before the SDK looks up the tool. Keep its
+    // handler, including the original error for a tool we did not register.
+    protocol.setRequestHandler = new Proxy(protocol.setRequestHandler, {
+      apply(setHandler, receiver, args) {
+        if (args[0] === "tools/call" && typeof args[1] === "function") {
+          const handler = args[1] as (request: CallToolRequest, context: unknown) => unknown;
+          args[1] = async (request: CallToolRequest, context: unknown) => {
+            const tool = request.params.name;
+            if (hiddenTools.has(tool)) {
+              await record({
+                ts: new Date().toISOString(),
+                tool,
+                result: "denied",
+                reason: "capability",
+                durationMs: 0,
+              });
+            }
+            return handler(request, context);
+          };
+        }
+        return Reflect.apply(setHandler, receiver, args);
+      },
+    });
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (server as unknown as { registerTool: (...a: any[]) => unknown }).registerTool = (
     name: string,
     config: unknown,
     cb: (args: Record<string, unknown>, extra: unknown) => Promise<ToolResult>,
   ) => {
-    if (!toolAllowed(policy, name)) return undefined;
+    if (!toolAllowed(policy, name)) {
+      hiddenTools.add(name);
+      return undefined;
+    }
     return original(name, config, async (args: Record<string, unknown>, extra: unknown) => {
       const started = Date.now();
       const isSend = capabilityOf(name, args) === "send";
