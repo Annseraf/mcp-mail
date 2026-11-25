@@ -121,6 +121,34 @@ describe("hosted calendar permissions", () => {
     expect(calls.has("create_event")).toBe(false);
   });
 
+  it("timestamps an audit event after a tool that crosses midnight resolves", async () => {
+    const { server, calls, register } = registrations();
+    const audit = new AuditLog(dir);
+    const record = vi.spyOn(audit, "record").mockResolvedValue(undefined);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-01-01T23:59:59Z"));
+      guardTools(server, {
+        policy: { id: "reader", capabilities: new Set(["read"]) },
+        audit: { log: audit, tenantId: "synthetic" },
+      });
+      register.registerTool("list_accounts", {}, async () => {
+        vi.setSystemTime(new Date("2026-01-02T00:00:01Z"));
+        return { content: [] };
+      });
+      await calls.get("list_accounts")!({});
+      expect(record).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          ts: "2026-01-02T00:00:01.000Z",
+          durationMs: 2000,
+          result: "ok",
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("preserves standalone calendar presets", async () => {
     const { server, calls, register } = registrations();
     guardTools(server, { policy: { id: "standalone", capabilities: new Set(PRESETS.full) } });

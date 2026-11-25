@@ -98,10 +98,15 @@ export async function auditModernHiddenTool(server: McpServer, tool: unknown): P
 export function guardTools(server: McpServer, o: GuardOptions): void {
   const { policy } = o;
   const original = server.registerTool.bind(server) as (...a: unknown[]) => unknown;
-  const record = async (e: Omit<AuditEntry, "tenantId" | "clientId">) => {
+  const record = async (e: Omit<AuditEntry, "tenantId" | "clientId" | "ts">) => {
     if (o.audit)
       await o.audit.log
-        .record({ ...e, tenantId: o.audit.tenantId, clientId: policy.id })
+        .record({
+          ...e,
+          ts: new Date().toISOString(),
+          tenantId: o.audit.tenantId,
+          clientId: policy.id,
+        })
         .catch(() => {});
   };
 
@@ -111,7 +116,6 @@ export function guardTools(server: McpServer, o: GuardOptions): void {
     const auditHidden = async (tool: unknown) => {
       if (typeof tool !== "string" || !hiddenTools.has(tool)) return;
       await record({
-        ts: new Date().toISOString(),
         tool,
         result: "denied",
         reason: "capability",
@@ -166,7 +170,6 @@ export function guardTools(server: McpServer, o: GuardOptions): void {
       const isSend = capabilityOf(name, args) === "send";
       const recipients = isSend ? recipientsOf(args) : [];
       const base = {
-        ts: new Date().toISOString(),
         tool: name,
         account: typeof args.account === "string" ? args.account : undefined,
         mailbox: typeof args.mailbox === "string" ? args.mailbox : undefined,

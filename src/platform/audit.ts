@@ -82,53 +82,58 @@ export class AuditLog {
       throw new RangeError("Expected a complete UTC day (YYYY-MM-DD)");
     }
     const end = start + 86_400_000;
-    return this.exclusive(t, async () => {
-      const file = this.logFile(t);
-      const counts = { ok: 0, denied: 0, errors: 0, waiting: 0 };
-      const observed = this.coverage.get(t);
-      let complete = false;
-      try {
-        const before = await this.stamp(file);
-        complete = !!observed && observed.since <= start && observed.stamp === before;
-        for (const name of [file, `${file}.1`]) {
-          let raw: string;
-          try {
-            raw = await fs.readFile(name, "utf8");
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
-            throw error;
-          }
-          if (raw && !raw.endsWith("\n")) complete = false;
-          for (const line of raw.split("\n").filter(Boolean)) {
-            let entry: AuditEntry;
-            try {
-              entry = JSON.parse(line);
-            } catch {
-              complete = false;
-              continue;
-            }
-            const at = Date.parse(entry?.ts);
-            if (
-              entry?.tenantId !== t ||
-              !Number.isFinite(at) ||
-              !["ok", "denied", "error"].includes(entry.result)
-            ) {
-              complete = false;
-              continue;
-            }
-            if (at < start || at >= end) continue;
-            if (entry.result === "denied") counts.denied++;
-            else if (entry.result === "error") counts.errors++;
-            else if (entry.reason === "awaiting-approval") counts.waiting++;
-            else counts.ok++;
-          }
+    // Wait for already queued writes, then scan without holding the write lock.
+    await this.operations.get(t)?.catch(() => {});
+    const file = this.logFile(t);
+    const counts = { ok: 0, denied: 0, errors: 0, waiting: 0 };
+    const observed = this.coverage.get(t);
+    let complete: boolean;
+    try {
+      const before = await this.stamp(file);
+      complete = !!observed && observed.since <= start && observed.stamp === before;
+      for (const name of [file, `${file}.1`]) {
+        let raw: string;
+        try {
+          raw = await fs.readFile(name, "utf8");
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+          throw error;
         }
-        complete = complete && before === (await this.stamp(file));
-      } catch {
-        complete = false;
+        if (raw && !raw.endsWith("\n")) complete = false;
+        for (const line of raw.split("\n").filter(Boolean)) {
+          let entry: AuditEntry;
+          try {
+            entry = JSON.parse(line);
+          } catch {
+            complete = false;
+            continue;
+          }
+          const at = Date.parse(entry?.ts);
+          if (
+            entry?.tenantId !== t ||
+            !Number.isFinite(at) ||
+            !["ok", "denied", "error"].includes(entry.result)
+          ) {
+            complete = false;
+            continue;
+          }
+          if (at < start || at >= end) continue;
+          if (entry.result === "denied") counts.denied++;
+          else if (entry.result === "error") counts.errors++;
+          else if (entry.reason === "awaiting-approval") counts.waiting++;
+          else counts.ok++;
+        }
       }
-      return { day, complete, counts: complete ? counts : null };
-    });
+      const after = await this.stamp(file);
+      complete =
+        complete &&
+        before === after &&
+        observed === this.coverage.get(t) &&
+        !this.operations.has(t);
+    } catch {
+      complete = false;
+    }
+    return { day, complete, counts: complete ? counts : null };
   }
 
   private readonly usage = new Map<string, UsageFile>();
