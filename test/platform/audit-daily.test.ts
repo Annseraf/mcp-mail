@@ -1,3 +1,4 @@
+import { promises as fs } from "node:fs";
 import { appendFile, mkdtemp, rm, truncate } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -46,6 +47,66 @@ it("counts a bounded UTC day across a busy history and fails closed on coverage 
     await audit.applyRetention("beta", 0);
     expect(await audit.daily("beta", "2024-01-02")).toEqual(absent);
   } finally {
+    clock.mockRestore();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+it("takes a daily snapshot while a later write waits without blocking another tenant", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "audit-daily-concurrent-"));
+  const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2024-01-01T23:59:59Z"));
+  const audit = new AuditLog(dir);
+  const entry = (tenantId: string, ts: string): AuditEntry => ({
+    tenantId,
+    ts,
+    result: "denied",
+    clientId: "reader",
+    tool: "synthetic",
+    durationMs: 0,
+  });
+  const readFile = fs.readFile.bind(fs);
+  let entered!: () => void;
+  const reading = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  let resume!: () => void;
+  const hold = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  const read = vi.spyOn(fs, "readFile").mockImplementation(async (...args) => {
+    if (args[0] === path.join(dir, "alpha.jsonl")) {
+      entered();
+      await hold;
+    }
+    return readFile(...args);
+  });
+  let preview: ReturnType<AuditLog["daily"]> | undefined;
+  let later: Promise<void> | undefined;
+  try {
+    await audit.record(entry("alpha", "2024-01-01T23:59:59Z"));
+    await audit.record(entry("alpha", "2024-01-02T23:59:59Z"));
+    clock.mockReturnValue(Date.parse("2024-01-03T00:00:00Z"));
+    preview = audit.daily("alpha", "2024-01-02");
+    await reading;
+    let written = false;
+    later = audit.record(entry("alpha", "2024-01-03T00:00:00Z")).then(() => {
+      written = true;
+    });
+    await audit.record(entry("beta", "2024-01-03T00:00:00Z"));
+    expect(written).toBe(false);
+    resume();
+    const expected = {
+      day: "2024-01-02",
+      complete: true,
+      counts: { ok: 0, denied: 1, errors: 0, waiting: 0 },
+    };
+    expect(await preview).toEqual(expected);
+    await later;
+    expect(await audit.daily("alpha", "2024-01-02")).toEqual(expected);
+  } finally {
+    resume();
+    await Promise.allSettled([preview, later]);
+    read.mockRestore();
     clock.mockRestore();
     await rm(dir, { recursive: true, force: true });
   }

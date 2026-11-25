@@ -70,6 +70,29 @@ export class AuditLog {
     return files.join("/");
   }
 
+  private async dailySnapshot(tenant: string, start: number): Promise<Buffer[] | null> {
+    return this.exclusive(tenant, async () => {
+      const observed = this.coverage.get(tenant);
+      if (!observed || observed.since > start) return null;
+      const file = this.logFile(tenant);
+      const before = await this.stamp(file);
+      if (observed.stamp !== before) return null;
+      // Copy the retained files while this process's writers are excluded. Parse
+      // the snapshot after releasing the lock so writes need only wait for I/O.
+      const files = await Promise.all(
+        [file, `${file}.1`].map(async (name) => {
+          try {
+            return await fs.readFile(name);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") return Buffer.alloc(0);
+            throw error;
+          }
+        }),
+      );
+      return before === (await this.stamp(file)) ? files : null;
+    });
+  }
+
   /** The window must be one complete UTC day. Counts cover only retained events. */
   async daily(t: string, day: string) {
     const start = Date.parse(`${day}T00:00:00.000Z`);
@@ -82,23 +105,13 @@ export class AuditLog {
       throw new RangeError("Expected a complete UTC day (YYYY-MM-DD)");
     }
     const end = start + 86_400_000;
-    // Wait for already queued writes, then scan without holding the write lock.
-    await this.operations.get(t)?.catch(() => {});
-    const file = this.logFile(t);
     const counts = { ok: 0, denied: 0, errors: 0, waiting: 0 };
-    const observed = this.coverage.get(t);
     let complete: boolean;
     try {
-      const before = await this.stamp(file);
-      complete = !!observed && observed.since <= start && observed.stamp === before;
-      for (const name of [file, `${file}.1`]) {
-        let raw: string;
-        try {
-          raw = await fs.readFile(name, "utf8");
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
-          throw error;
-        }
+      const files = await this.dailySnapshot(t, start);
+      complete = files !== null;
+      for (const data of files ?? []) {
+        const raw = data.toString("utf8");
         if (raw && !raw.endsWith("\n")) complete = false;
         for (const line of raw.split("\n").filter(Boolean)) {
           let entry: AuditEntry;
@@ -124,12 +137,6 @@ export class AuditLog {
           else counts.ok++;
         }
       }
-      const after = await this.stamp(file);
-      complete =
-        complete &&
-        before === after &&
-        observed === this.coverage.get(t) &&
-        !this.operations.has(t);
     } catch {
       complete = false;
     }
