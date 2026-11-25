@@ -127,3 +127,5 @@ Adding a tool: [docs/ADDING_A_TOOL.md](docs/ADDING_A_TOOL.md). Contributions: [C
 ## License
 
 MIT. Copyright (c) 2026 Markus Stöger and (c) 2026 Mohith K Das and mcp-mail contributors. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+Follow the [Annseraf | Open Source Projects](https://github.com/orgs/Annseraf/projects/2).
