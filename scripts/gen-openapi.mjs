@@ -314,6 +314,19 @@ const spec = {
         responses: { 200: json(ref("AuditPage")), 400: err("Invalid request"), ...withTenant },
       }),
     },
+    "/tenants/{tenantId}/audit/daily": {
+      parameters: [tenantPath],
+      get: op("getAuditDaily", "Summarize retained audit activity for a complete UTC day", {
+        parameters: [
+          { name: "day", in: "query", required: true, schema: { type: "string", format: "date" } },
+        ],
+        responses: {
+          200: json(ref("AuditDaily")),
+          400: err("Invalid or unfinished UTC day"),
+          ...withTenant,
+        },
+      }),
+    },
     "/tenants/{tenantId}/usage": {
       parameters: [tenantPath],
       get: op("getUsage", "Tool calls per day, per client (last 35 days)", {
@@ -326,6 +339,29 @@ const spec = {
       serviceToken: { type: "http", scheme: "bearer", description: "ADMIN_TOKEN" },
     },
     schemas: {
+      AuditDaily: {
+        type: "object",
+        additionalProperties: false,
+        required: ["day", "complete", "counts"],
+        properties: {
+          day: { type: "string", format: "date" },
+          complete: {
+            type: "boolean",
+            description: "Continuous retained coverage of the full UTC day in this process",
+          },
+          counts: {
+            type: ["object", "null"],
+            additionalProperties: false,
+            required: ["ok", "denied", "errors", "waiting"],
+            properties: Object.fromEntries(
+              ["ok", "denied", "errors", "waiting"].map((key) => [
+                key,
+                { type: "integer", minimum: 0 },
+              ]),
+            ),
+          },
+        },
+      },
       ObjectId: { type: "string", pattern: "^[a-z0-9][a-z0-9_-]{0,31}$" },
       Error: {
         type: "object",

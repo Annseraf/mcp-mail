@@ -41,6 +41,96 @@ const KEEP_DAYS = 35;
 export const today = (d = new Date()) => d.toISOString().slice(0, 10);
 
 export class AuditLog {
+  private readonly operations = new Map<string, Promise<unknown>>();
+  private readonly coverage = new Map<string, { since: number; stamp: string }>();
+
+  private async exclusive<T>(tenant: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.operations.get(tenant) ?? Promise.resolve();
+    const pending = previous.catch(() => {}).then(operation);
+    this.operations.set(tenant, pending);
+    try {
+      return await pending;
+    } finally {
+      if (this.operations.get(tenant) === pending) this.operations.delete(tenant);
+    }
+  }
+
+  private async stamp(file: string): Promise<string> {
+    const files = await Promise.all(
+      [file, `${file}.1`].map(async (name) => {
+        try {
+          const stat = await fs.stat(name, { bigint: true });
+          return `${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return "-";
+          throw error;
+        }
+      }),
+    );
+    return files.join("/");
+  }
+
+  /** The window must be one complete UTC day. Counts cover only retained events. */
+  async daily(t: string, day: string) {
+    const start = Date.parse(`${day}T00:00:00.000Z`);
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(day) ||
+      !Number.isFinite(start) ||
+      today(new Date(start)) !== day ||
+      day >= today()
+    ) {
+      throw new RangeError("Expected a complete UTC day (YYYY-MM-DD)");
+    }
+    const end = start + 86_400_000;
+    return this.exclusive(t, async () => {
+      const file = this.logFile(t);
+      const counts = { ok: 0, denied: 0, errors: 0, waiting: 0 };
+      const observed = this.coverage.get(t);
+      let complete = false;
+      try {
+        const before = await this.stamp(file);
+        complete = !!observed && observed.since <= start && observed.stamp === before;
+        for (const name of [file, `${file}.1`]) {
+          let raw: string;
+          try {
+            raw = await fs.readFile(name, "utf8");
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+            throw error;
+          }
+          if (raw && !raw.endsWith("\n")) complete = false;
+          for (const line of raw.split("\n").filter(Boolean)) {
+            let entry: AuditEntry;
+            try {
+              entry = JSON.parse(line);
+            } catch {
+              complete = false;
+              continue;
+            }
+            const at = Date.parse(entry?.ts);
+            if (
+              entry?.tenantId !== t ||
+              !Number.isFinite(at) ||
+              !["ok", "denied", "error"].includes(entry.result)
+            ) {
+              complete = false;
+              continue;
+            }
+            if (at < start || at >= end) continue;
+            if (entry.result === "denied") counts.denied++;
+            else if (entry.result === "error") counts.errors++;
+            else if (entry.reason === "awaiting-approval") counts.waiting++;
+            else counts.ok++;
+          }
+        }
+        complete = complete && before === (await this.stamp(file));
+      } catch {
+        complete = false;
+      }
+      return { day, complete, counts: complete ? counts : null };
+    });
+  }
+
   private readonly usage = new Map<string, UsageFile>();
   private readonly flushTimers = new Map<string, NodeJS.Timeout>();
 
@@ -63,16 +153,27 @@ export class AuditLog {
   }
 
   async record(e: AuditEntry): Promise<void> {
-    const file = this.logFile(e.tenantId);
-    await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-    try {
-      const st = await fs.stat(file);
-      if (st.size > MAX_BYTES) await fs.rename(file, `${file}.1`);
-    } catch {
-      /* first write */
-    }
-    await fs.appendFile(file, JSON.stringify(e) + "\n", { mode: 0o600 });
-    if (e.result !== "denied") await this.count(e.tenantId, e.clientId);
+    await this.exclusive(e.tenantId, async () => {
+      const file = this.logFile(e.tenantId);
+      const observed = this.coverage.get(e.tenantId);
+      // Any failed operation or unrecognized prior file state leaves coverage unknown.
+      this.coverage.delete(e.tenantId);
+      const stamp = await this.stamp(file);
+      let since = observed?.stamp === stamp ? observed.since : Date.now();
+      await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+      try {
+        const st = await fs.stat(file);
+        if (st.size > MAX_BYTES) {
+          await fs.rename(file, `${file}.1`);
+          since = Date.now();
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+      await fs.appendFile(file, JSON.stringify(e) + "\n", { mode: 0o600 });
+      this.coverage.set(e.tenantId, { since, stamp: await this.stamp(file) });
+      if (e.result !== "denied") await this.count(e.tenantId, e.clientId);
+    });
   }
 
   private async loadUsage(t: string): Promise<UsageFile> {
@@ -138,33 +239,39 @@ export class AuditLog {
   }
 
   async purgeTenant(t: string): Promise<void> {
-    const timer = this.flushTimers.get(t);
-    if (timer) clearTimeout(timer);
-    this.flushTimers.delete(t);
-    this.usage.delete(t);
-    await Promise.all([
-      removeFile(this.logFile(t)),
-      removeFile(`${this.logFile(t)}.1`),
-      removeFile(this.usageFile(t)),
-    ]);
+    await this.exclusive(t, async () => {
+      this.coverage.delete(t);
+      const timer = this.flushTimers.get(t);
+      if (timer) clearTimeout(timer);
+      this.flushTimers.delete(t);
+      this.usage.delete(t);
+      await Promise.all([
+        removeFile(this.logFile(t)),
+        removeFile(`${this.logFile(t)}.1`),
+        removeFile(this.usageFile(t)),
+      ]);
+    });
   }
 
   /** Drop entries older than `days` (applied by the admin API's retention setting). */
   async applyRetention(t: string, days: number): Promise<void> {
-    const cutoff = Date.now() - days * 86_400_000;
-    const file = this.logFile(t);
-    let text: string;
-    try {
-      text = await fs.readFile(file, "utf8");
-    } catch {
-      return;
-    }
-    const kept = text
-      .split("\n")
-      .filter(Boolean)
-      .filter((l) => Date.parse((JSON.parse(l) as AuditEntry).ts) >= cutoff);
-    await writeFileAtomic(file, kept.length ? kept.join("\n") + "\n" : "");
-    await removeFile(`${file}.1`);
+    await this.exclusive(t, async () => {
+      this.coverage.delete(t);
+      const cutoff = Date.now() - days * 86_400_000;
+      const file = this.logFile(t);
+      let text: string;
+      try {
+        text = await fs.readFile(file, "utf8");
+      } catch {
+        return;
+      }
+      const kept = text
+        .split("\n")
+        .filter(Boolean)
+        .filter((l) => Date.parse((JSON.parse(l) as AuditEntry).ts) >= cutoff);
+      await writeFileAtomic(file, kept.length ? kept.join("\n") + "\n" : "");
+      await removeFile(`${file}.1`);
+    });
   }
 }
 

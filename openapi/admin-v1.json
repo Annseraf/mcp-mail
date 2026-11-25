@@ -1488,6 +1488,76 @@
         }
       }
     },
+    "/tenants/{tenantId}/audit/daily": {
+      "parameters": [
+        {
+          "name": "tenantId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{2,62}$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getAuditDaily",
+        "summary": "Summarize retained audit activity for a complete UTC day",
+        "parameters": [
+          {
+            "name": "day",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditDaily"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or unfinished UTC day",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid service token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Tenant not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/tenants/{tenantId}/usage": {
       "parameters": [
         {
@@ -1547,6 +1617,44 @@
       }
     },
     "schemas": {
+      "AuditDaily": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["day", "complete", "counts"],
+        "properties": {
+          "day": {
+            "type": "string",
+            "format": "date"
+          },
+          "complete": {
+            "type": "boolean",
+            "description": "Continuous retained coverage of the full UTC day in this process"
+          },
+          "counts": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "required": ["ok", "denied", "errors", "waiting"],
+            "properties": {
+              "ok": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "denied": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "errors": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "waiting": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      },
       "ObjectId": {
         "type": "string",
         "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"
