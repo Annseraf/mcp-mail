@@ -4,7 +4,12 @@
  * registered (absent from tools/list), and every call is checked again at
  * dispatch. Every call is audited when a sink is configured.
  */
-import type { McpServer } from "@modelcontextprotocol/server";
+import {
+  ProtocolError,
+  ProtocolErrorCode,
+  type CallToolRequest,
+  type McpServer,
+} from "@modelcontextprotocol/server";
 import type { AuditEntry, AuditSink } from "../platform/audit.js";
 import { capabilityOf, type Capability } from "./capabilities.js";
 
@@ -83,6 +88,13 @@ export interface GuardOptions {
   rateKey?: string;
 }
 
+const modernAudit = new WeakMap<McpServer, (tool: unknown) => Promise<void>>();
+
+/** Called by the modern HTTP factory after SDK header and envelope checks. */
+export async function auditModernHiddenTool(server: McpServer, tool: unknown): Promise<void> {
+  await modernAudit.get(server)?.(tool);
+}
+
 export function guardTools(server: McpServer, o: GuardOptions): void {
   const { policy } = o;
   const original = server.registerTool.bind(server) as (...a: unknown[]) => unknown;
@@ -93,13 +105,62 @@ export function guardTools(server: McpServer, o: GuardOptions): void {
         .catch(() => {});
   };
 
+  const hiddenTools = new Set<string>();
+  if (o.audit && server.server) {
+    const protocol = server.server;
+    const auditHidden = async (tool: unknown) => {
+      if (typeof tool !== "string" || !hiddenTools.has(tool)) return;
+      await record({
+        ts: new Date().toISOString(),
+        tool,
+        result: "denied",
+        reason: "capability",
+        durationMs: 0,
+      });
+    };
+
+    // SDK 2.4 installs tools/call lazily. If every tool is hidden, keep
+    // capabilities untouched and preserve the SDK's method-not-found reply.
+    const fallback = protocol.fallbackRequestHandler;
+    modernAudit.set(server, async (tool) => {
+      // A thrown fallback error would turn the SDK's HTTP 404 into HTTP 200.
+      protocol.fallbackRequestHandler = fallback;
+      await auditHidden(tool);
+    });
+    protocol.fallbackRequestHandler = async (request, context) => {
+      if (request.method === "tools/call") await auditHidden(request.params?.name);
+      if (fallback) return fallback(request, context);
+      throw new ProtocolError(ProtocolErrorCode.MethodNotFound, "Method not found");
+    };
+
+    // With visible tools, observe validated dispatch and retain the original
+    // SDK reply. The fallback is only needed when no handler is installed.
+    protocol.setRequestHandler = new Proxy(protocol.setRequestHandler, {
+      apply(setHandler, receiver, args) {
+        if (args[0] === "tools/call" && typeof args[1] === "function") {
+          protocol.fallbackRequestHandler = fallback;
+          modernAudit.delete(server);
+          const handler = args[1] as (request: CallToolRequest, context: unknown) => unknown;
+          args[1] = async (request: CallToolRequest, context: unknown) => {
+            await auditHidden(request.params.name);
+            return handler(request, context);
+          };
+        }
+        return Reflect.apply(setHandler, receiver, args);
+      },
+    });
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (server as unknown as { registerTool: (...a: any[]) => unknown }).registerTool = (
     name: string,
     config: unknown,
     cb: (args: Record<string, unknown>, extra: unknown) => Promise<ToolResult>,
   ) => {
-    if (!toolAllowed(policy, name)) return undefined;
+    if (!toolAllowed(policy, name)) {
+      hiddenTools.add(name);
+      return undefined;
+    }
     return original(name, config, async (args: Record<string, unknown>, extra: unknown) => {
       const started = Date.now();
       const isSend = capabilityOf(name, args) === "send";

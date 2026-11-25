@@ -26,7 +26,7 @@ import { TenantOAuth } from "./auth/tenant-oauth.js";
 import { OverlayAccountSettings, type AccountSettingsWriter } from "./account-settings.js";
 import type { AuthSettings } from "./auth/settings.js";
 import { ClientsStore, type Identity } from "./policy/clients-file.js";
-import { guardTools, type ClientPolicy } from "./policy/guard.js";
+import { auditModernHiddenTool, guardTools, type ClientPolicy } from "./policy/guard.js";
 import { buildMcpServer } from "./mcp-server.js";
 import { buildInfo } from "./version.js";
 import { createAdminApp } from "./admin/api.js";
@@ -271,10 +271,17 @@ export async function createEngine(o: EngineOptions): Promise<Engine> {
    */
   const mcpEndpoint = (factory: (auth?: AuthInfo) => McpServer) => {
     const modern = toNodeHandler(
-      createMcpHandler(({ authInfo }) => factory(authInfo), {
-        legacy: "reject",
-        responseMode: "json",
-      }),
+      createMcpHandler(
+        async ({ authInfo }) => {
+          const server = factory(authInfo);
+          await auditModernHiddenTool(server, authInfo?.extra?.auditToolName);
+          return server;
+        },
+        {
+          legacy: "reject",
+          responseMode: "json",
+        },
+      ),
     );
     const handle = async (req: Request & { auth?: AuthInfo }, res: Response) => {
       if (await isLegacyRequest(await toWebRequest(req, req.body), req.body)) {
@@ -290,6 +297,16 @@ export async function createEngine(o: EngineOptions): Promise<Engine> {
         await server.connect(transport);
         await transport.handleRequest(req, res, req.body);
         return;
+      }
+      if (
+        req.auth &&
+        req.body?.method === "tools/call" &&
+        typeof req.body.params?.name === "string"
+      ) {
+        req.auth = {
+          ...req.auth,
+          extra: { ...req.auth.extra, auditToolName: req.body.params.name },
+        };
       }
       await modern(req, res, req.body);
     };
