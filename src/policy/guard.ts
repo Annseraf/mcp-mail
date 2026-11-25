@@ -88,6 +88,13 @@ export interface GuardOptions {
   rateKey?: string;
 }
 
+const modernAudit = new WeakMap<McpServer, (tool: unknown) => Promise<void>>();
+
+/** Called by the modern HTTP factory after SDK header and envelope checks. */
+export async function auditModernHiddenTool(server: McpServer, tool: unknown): Promise<void> {
+  await modernAudit.get(server)?.(tool);
+}
+
 export function guardTools(server: McpServer, o: GuardOptions): void {
   const { policy } = o;
   const original = server.registerTool.bind(server) as (...a: unknown[]) => unknown;
@@ -115,6 +122,11 @@ export function guardTools(server: McpServer, o: GuardOptions): void {
     // SDK 2.4 installs tools/call lazily. If every tool is hidden, keep
     // capabilities untouched and preserve the SDK's method-not-found reply.
     const fallback = protocol.fallbackRequestHandler;
+    modernAudit.set(server, async (tool) => {
+      // A thrown fallback error would turn the SDK's HTTP 404 into HTTP 200.
+      protocol.fallbackRequestHandler = fallback;
+      await auditHidden(tool);
+    });
     protocol.fallbackRequestHandler = async (request, context) => {
       if (request.method === "tools/call") await auditHidden(request.params?.name);
       if (fallback) return fallback(request, context);
@@ -127,6 +139,7 @@ export function guardTools(server: McpServer, o: GuardOptions): void {
       apply(setHandler, receiver, args) {
         if (args[0] === "tools/call" && typeof args[1] === "function") {
           protocol.fallbackRequestHandler = fallback;
+          modernAudit.delete(server);
           const handler = args[1] as (request: CallToolRequest, context: unknown) => unknown;
           args[1] = async (request: CallToolRequest, context: unknown) => {
             await auditHidden(request.params.name);

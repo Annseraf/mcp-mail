@@ -2,7 +2,7 @@ import { createMcpHandler, InMemoryTransport, McpServer } from "@modelcontextpro
 import type { JSONRPCMessage } from "@modelcontextprotocol/server";
 import { expect, it, vi } from "vitest";
 import type { AuditEntry } from "../../src/platform/audit.js";
-import { guardTools } from "../../src/policy/guard.js";
+import { auditModernHiddenTool, guardTools } from "../../src/policy/guard.js";
 
 function setup(record: (entry: AuditEntry) => Promise<void>, hideAll = false) {
   const server = new McpServer({ name: "policy-test", version: "1.0.0" });
@@ -72,42 +72,63 @@ it("audits only known hidden tool attempts and preserves the legacy SDK response
   }
 });
 
-it("keeps modern denial unchanged even if the audit sink fails", async () => {
-  const record = vi.fn<(entry: AuditEntry) => Promise<void>>().mockRejectedValue(new Error("disk"));
-  const { server, refused } = setup(record);
-  const protocolVersion = "2026-07-28";
-  const handler = createMcpHandler(() => server, { legacy: "reject", responseMode: "json" });
-  const response = await handler.fetch(
-    new Request("http://localhost/mcp", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json, text/event-stream",
-        "mcp-protocol-version": protocolVersion,
-        "mcp-method": "tools/call",
-        "mcp-name": "send_message",
+it.each([
+  { hideAll: false, status: 200, code: -32602, message: "Tool send_message not found" },
+  { hideAll: true, status: 404, code: -32601, message: "Method not found" },
+])(
+  "preserves modern HTTP $status when the audit sink fails",
+  async ({ hideAll, status, code, message }) => {
+    const record = vi
+      .fn<(entry: AuditEntry) => Promise<void>>()
+      .mockRejectedValue(new Error("disk"));
+    const { server, refused } = setup(record, hideAll);
+    const protocolVersion = "2026-07-28";
+    const handler = createMcpHandler(
+      async ({ authInfo }) => {
+        await auditModernHiddenTool(server, authInfo?.extra?.auditToolName);
+        return server;
       },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/call",
-        params: {
-          name: "send_message",
-          _meta: {
-            "io.modelcontextprotocol/protocolVersion": protocolVersion,
-            "io.modelcontextprotocol/clientCapabilities": {},
-            "io.modelcontextprotocol/clientInfo": { name: "synthetic", version: "1.0.0" },
-          },
+      { legacy: "reject", responseMode: "json" },
+    );
+    const response = await handler.fetch(
+      new Request("http://localhost/mcp", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          "mcp-protocol-version": protocolVersion,
+          "mcp-method": "tools/call",
+          "mcp-name": "send_message",
         },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: {
+            name: "send_message",
+            _meta: {
+              "io.modelcontextprotocol/protocolVersion": protocolVersion,
+              "io.modelcontextprotocol/clientCapabilities": {},
+              "io.modelcontextprotocol/clientInfo": { name: "synthetic", version: "1.0.0" },
+            },
+          },
+        }),
       }),
-    }),
-  );
-  expect(await response.json()).toMatchObject({
-    error: { code: -32602, message: "Tool send_message not found" },
-  });
-  expect(record).toHaveBeenCalledTimes(1);
-  expect(refused).not.toHaveBeenCalled();
-});
+      {
+        authInfo: {
+          token: "",
+          clientId: "reader",
+          scopes: [],
+          extra: { auditToolName: "send_message" },
+        },
+      },
+    );
+    expect(response.status).toBe(status);
+    expect(await response.json()).toMatchObject({ error: { code, message } });
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(refused).not.toHaveBeenCalled();
+  },
+);
 
 it("audits an all-hidden custom policy once without advertising tools or changing refusal", async () => {
   const record = vi.fn<(entry: AuditEntry) => Promise<void>>().mockResolvedValue(undefined);
