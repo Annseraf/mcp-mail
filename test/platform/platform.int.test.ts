@@ -437,6 +437,19 @@ describe("platform: multi-tenant mode and admin API", () => {
     expect((await admin("GET", `/tenants/${A}/audit?limit=0`)).status).toBe(400);
   });
 
+  it("serves daily audit coverage only for a valid UTC day and authenticated tenant", async () => {
+    const day = "2000-01-01";
+    const endpoint = `/tenants/${A}/audit/daily`;
+    const report = await admin("GET", `${endpoint}?day=${day}`);
+    expect(report.status).toBe(200);
+    expect(report.body).toEqual({ day, complete: false, counts: null });
+    expect((await admin("GET", `${endpoint}?day=2000-02-30`)).status).toBe(400);
+    expect((await admin("GET", `${endpoint}?day=${day}`, undefined, "invalid-token")).status).toBe(
+      401,
+    );
+    expect((await admin("GET", `/tenants/missing-tenant/audit/daily?day=${day}`)).status).toBe(404);
+  });
+
   it("tests a mailbox without saving it, and never echoes the password", async () => {
     const ok = await admin("POST", `/tenants/${A}/mailboxes/test`, {
       imap: endpointOf(mail.users.alice, "imap"),

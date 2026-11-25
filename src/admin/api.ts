@@ -695,6 +695,21 @@ export function createAdminApp(d: AdminDeps): Express {
     }),
   );
   r.get(
+    "/tenants/:id/audit/daily",
+    h(async (req, res) => {
+      const t = await tenantOr404(String(req.params.id));
+      const day = req.query.day;
+      if (typeof day !== "string")
+        throw new HttpError(400, "invalid_request", "Expected a UTC day");
+      try {
+        res.json(await p.audit.daily(t.id, day));
+      } catch (error) {
+        if (error instanceof RangeError) throw new HttpError(400, "invalid_request", error.message);
+        throw error;
+      }
+    }),
+  );
+  r.get(
     "/tenants/:id/usage",
     h(async (req, res) => {
       const t = await tenantOr404(String(req.params.id));
