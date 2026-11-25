@@ -4,7 +4,12 @@
  * registered (absent from tools/list), and every call is checked again at
  * dispatch. Every call is audited when a sink is configured.
  */
-import type { CallToolRequest, McpServer } from "@modelcontextprotocol/server";
+import {
+  ProtocolError,
+  ProtocolErrorCode,
+  type CallToolRequest,
+  type McpServer,
+} from "@modelcontextprotocol/server";
 import type { AuditEntry, AuditSink } from "../platform/audit.js";
 import { capabilityOf, type Capability } from "./capabilities.js";
 
@@ -96,23 +101,35 @@ export function guardTools(server: McpServer, o: GuardOptions): void {
   const hiddenTools = new Set<string>();
   if (o.audit && server.server) {
     const protocol = server.server;
-    // Observe validated calls before the SDK looks up the tool. Keep its
-    // handler, including the original error for a tool we did not register.
+    const auditHidden = async (tool: unknown) => {
+      if (typeof tool !== "string" || !hiddenTools.has(tool)) return;
+      await record({
+        ts: new Date().toISOString(),
+        tool,
+        result: "denied",
+        reason: "capability",
+        durationMs: 0,
+      });
+    };
+
+    // SDK 2.4 installs tools/call lazily. If every tool is hidden, keep
+    // capabilities untouched and preserve the SDK's method-not-found reply.
+    const fallback = protocol.fallbackRequestHandler;
+    protocol.fallbackRequestHandler = async (request, context) => {
+      if (request.method === "tools/call") await auditHidden(request.params?.name);
+      if (fallback) return fallback(request, context);
+      throw new ProtocolError(ProtocolErrorCode.MethodNotFound, "Method not found");
+    };
+
+    // With visible tools, observe validated dispatch and retain the original
+    // SDK reply. The fallback is only needed when no handler is installed.
     protocol.setRequestHandler = new Proxy(protocol.setRequestHandler, {
       apply(setHandler, receiver, args) {
         if (args[0] === "tools/call" && typeof args[1] === "function") {
+          protocol.fallbackRequestHandler = fallback;
           const handler = args[1] as (request: CallToolRequest, context: unknown) => unknown;
           args[1] = async (request: CallToolRequest, context: unknown) => {
-            const tool = request.params.name;
-            if (hiddenTools.has(tool)) {
-              await record({
-                ts: new Date().toISOString(),
-                tool,
-                result: "denied",
-                reason: "capability",
-                durationMs: 0,
-              });
-            }
+            await auditHidden(request.params.name);
             return handler(request, context);
           };
         }

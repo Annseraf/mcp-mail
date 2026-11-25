@@ -4,10 +4,14 @@ import { expect, it, vi } from "vitest";
 import type { AuditEntry } from "../../src/platform/audit.js";
 import { guardTools } from "../../src/policy/guard.js";
 
-function setup(record: (entry: AuditEntry) => Promise<void>) {
+function setup(record: (entry: AuditEntry) => Promise<void>, hideAll = false) {
   const server = new McpServer({ name: "policy-test", version: "1.0.0" });
   guardTools(server, {
-    policy: { id: "reader", capabilities: new Set(["read"]) },
+    policy: {
+      id: "reader",
+      capabilities: new Set(["read"]),
+      denyTools: hideAll ? new Set(["list_accounts"]) : undefined,
+    },
     audit: { log: { record }, tenantId: "synthetic" },
   });
   const refused = vi.fn(async () => ({ content: [] }));
@@ -16,9 +20,7 @@ function setup(record: (entry: AuditEntry) => Promise<void>) {
   return { server, refused };
 }
 
-it("audits only known hidden tool attempts and preserves the legacy SDK response", async () => {
-  const record = vi.fn<(entry: AuditEntry) => Promise<void>>().mockResolvedValue(undefined);
-  const { server, refused } = setup(record);
+async function connect(server: McpServer) {
   const [client, transport] = InMemoryTransport.createLinkedPair();
   await server.connect(transport);
   await client.start();
@@ -30,6 +32,13 @@ it("audits only known hidden tool attempts and preserves the legacy SDK response
     await client.send({ jsonrpc: "2.0", id: ++id, method, params });
     return response;
   }
+  return { request, close: () => server.close() };
+}
+
+it("audits only known hidden tool attempts and preserves the legacy SDK response", async () => {
+  const record = vi.fn<(entry: AuditEntry) => Promise<void>>().mockResolvedValue(undefined);
+  const { server, refused } = setup(record);
+  const { request, close } = await connect(server);
   try {
     const list = await request("tools/list");
     expect(list).toMatchObject({ result: { tools: [{ name: "list_accounts" }] } });
@@ -59,8 +68,7 @@ it("audits only known hidden tool attempts and preserves the legacy SDK response
     ]);
     expect(refused).not.toHaveBeenCalled();
   } finally {
-    await server.close();
-    await client.close();
+    await close();
   }
 });
 
@@ -99,4 +107,39 @@ it("keeps modern denial unchanged even if the audit sink fails", async () => {
   });
   expect(record).toHaveBeenCalledTimes(1);
   expect(refused).not.toHaveBeenCalled();
+});
+
+it("audits an all-hidden custom policy once without advertising tools or changing refusal", async () => {
+  const record = vi.fn<(entry: AuditEntry) => Promise<void>>().mockResolvedValue(undefined);
+  const { server, refused } = setup(record, true);
+  const { request, close } = await connect(server);
+  try {
+    expect(server.server.getCapabilities()).not.toHaveProperty("tools");
+    const refusal = { error: { code: -32601, message: "Method not found" } };
+    expect(await request("tools/list")).toMatchObject(refusal);
+    expect(await request("tools/call", { name: "unknown-fixture" })).toMatchObject(refusal);
+    expect(record).not.toHaveBeenCalled();
+    expect(
+      await request("tools/call", {
+        name: "list_accounts",
+        arguments: { synthetic: "never log this" },
+      }),
+    ).toMatchObject(refusal);
+    expect(record.mock.calls).toEqual([
+      [
+        {
+          tenantId: "synthetic",
+          clientId: "reader",
+          tool: "list_accounts",
+          result: "denied",
+          reason: "capability",
+          ts: expect.any(String),
+          durationMs: 0,
+        },
+      ],
+    ]);
+    expect(refused).not.toHaveBeenCalled();
+  } finally {
+    await close();
+  }
 });
