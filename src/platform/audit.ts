@@ -7,6 +7,7 @@
  */
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { setImmediate as yieldToIO } from "node:timers/promises";
 import { readJson, removeFile, writeFileAtomic } from "./fsutil.js";
 import { assertTenantId } from "./ids.js";
 
@@ -77,8 +78,8 @@ export class AuditLog {
       const file = this.logFile(tenant);
       const before = await this.stamp(file);
       if (observed.stamp !== before) return null;
-      // Copy the retained files while this process's writers are excluded. Parse
-      // the snapshot after releasing the lock so writes need only wait for I/O.
+      // Copy the retained files while this process's writers are excluded.
+      // Release the lock before decoding or parsing any records.
       const files = await Promise.all(
         [file, `${file}.1`].map(async (name) => {
           try {
@@ -111,9 +112,24 @@ export class AuditLog {
       const files = await this.dailySnapshot(t, start);
       complete = files !== null;
       for (const data of files ?? []) {
-        const raw = data.toString("utf8");
-        if (raw && !raw.endsWith("\n")) complete = false;
-        for (const line of raw.split("\n").filter(Boolean)) {
+        let offset = 0;
+        let batchStart = 0;
+        let batchLines = 0;
+        while (offset < data.length) {
+          if (batchLines >= 512 || offset - batchStart >= 64 * 1024) {
+            await yieldToIO();
+            batchStart = offset;
+            batchLines = 0;
+          }
+          const newline = data.indexOf(0x0a, offset);
+          if (newline === -1) {
+            complete = false;
+            break;
+          }
+          const line = data.toString("utf8", offset, newline);
+          offset = newline + 1;
+          batchLines++;
+          if (line.length === 0) continue;
           let entry: AuditEntry;
           try {
             entry = JSON.parse(line);
