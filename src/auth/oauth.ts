@@ -672,18 +672,22 @@ export class OAuthServer {
     res: Response,
     v: { txn: string; client: RegisteredClient; redirectUri: string; error?: string },
   ) {
-    const host = (() => {
-      try {
-        return new URL(v.redirectUri).host;
-      } catch {
-        return "?";
+    let host = "?";
+    let formAction = "'self'";
+    try {
+      const redirect = new URL(v.redirectUri);
+      host = redirect.host;
+      // Chromium applies form-action to the redirect after the login POST.
+      if (/^https?:$/.test(redirect.protocol) && /^[a-z\d.-]+$/i.test(redirect.hostname)) {
+        formAction += ` ${redirect.origin}${redirect.pathname.replace(/[;,]/g, encodeURIComponent)}`;
       }
-    })();
+    } catch {
+      // Keep the same-origin policy if the callback URL cannot be parsed.
+    }
     res.set({
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
-      "Content-Security-Policy":
-        "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+      "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; form-action ${formAction}; frame-ancestors 'none'`,
       "X-Frame-Options": "DENY",
       "Referrer-Policy": "no-referrer",
     });
